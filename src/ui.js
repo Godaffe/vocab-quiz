@@ -2,6 +2,7 @@ import { parseWorkbookFile, importFromWorkbook } from './importer.js';
 import { startSession, checkBase, checkConjugation, finalizeVocabItem, checkAnswer, finalizeItem } from './quiz.js';
 import { getSetting, setSetting } from './db.js';
 import { exportToFile, importFromFile, daysSince } from './backup.js';
+import { getAllProgress } from './leitner.js';
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
@@ -61,12 +62,13 @@ export function renderImport(container) {
 export async function renderHome(container, { onStartSession }) {
   container.innerHTML = '<h1>Vocab Quiz</h1><p>Chargement…</p>';
   const session = await startSession();
+  const total = session.newItems.length + session.reviewItems.length;
   container.innerHTML = `
     <h1>Vocab Quiz</h1>
-    <p>${session.length} item(s) à réviser aujourd'hui.</p>
-    <button id="start-session-btn" ${session.length === 0 ? 'disabled' : ''}>Commencer la session</button>
+    <p>${session.newItems.length} nouveau(x), ${session.reviewItems.length} en révision aujourd'hui.</p>
+    <button id="start-session-btn" ${total === 0 ? 'disabled' : ''}>Commencer la session</button>
   `;
-  if (session.length > 0) {
+  if (total > 0) {
     container.querySelector('#start-session-btn').addEventListener('click', () => onStartSession(session));
   }
 }
@@ -98,78 +100,161 @@ function showCorrection(container, { header, isCorrect, expected, tag, example, 
       ${tag ? `<p><em>${escapeHtml(tag)}</em></p>` : ''}
       ${example ? `<p>Exemple : ${escapeHtml(example)}</p>` : ''}
       ${rule ? `<p>Règle : ${escapeHtml(rule)}</p>` : ''}
+      <button id="next-btn">${isCorrect ? 'Suivant' : 'Réessayer'}</button>
+    `;
+    container.querySelector('#next-btn').addEventListener('click', () => resolve());
+  });
+}
+
+function showPreview(container, { header, prompt, answer, tag, example, rule }) {
+  return new Promise((resolve) => {
+    container.innerHTML = `
+      <p class="progress-header">${escapeHtml(header)}</p>
+      <p class="prompt">${escapeHtml(prompt)}</p>
+      <p>Réponse : <strong>${escapeHtml(answer)}</strong></p>
+      ${tag ? `<p><em>${escapeHtml(tag)}</em></p>` : ''}
+      ${example ? `<p>Exemple : ${escapeHtml(example)}</p>` : ''}
+      ${rule ? `<p>Règle : ${escapeHtml(rule)}</p>` : ''}
       <button id="next-btn">Suivant</button>
     `;
     container.querySelector('#next-btn').addEventListener('click', () => resolve());
   });
 }
 
+async function previewItem(container, item, header) {
+  if (item.item_type === 'vocabulaire') {
+    const answer = item.en_past_simple
+      ? `${item.en_base} (${item.en_past_simple} / ${item.en_past_participle})`
+      : item.en_base;
+    await showPreview(container, { header, prompt: item.prompt, answer, tag: item.type, example: item.example });
+  } else if (item.item_type === 'grammaire') {
+    await showPreview(container, { header, prompt: item.prompt, answer: item.en, rule: item.explication });
+  } else if (item.item_type === 'expressions') {
+    await showPreview(container, { header, prompt: item.prompt, answer: item.en, example: item.example });
+  }
+}
+
+// Redemande la même question jusqu'à une bonne réponse. Seule la première tentative
+// (retournée ici) compte pour la note Leitner — les redemandes suivantes ne sont qu'un
+// entraînement affiché à l'écran.
+async function askUntilCorrect(container, header, prompt, checkFn, correctionFields) {
+  let first = null;
+  while (true) {
+    const answer = await askInput(container, { header, prompt });
+    const isCorrect = checkFn(answer);
+    if (first === null) first = isCorrect;
+    await showCorrection(container, { header, isCorrect, ...correctionFields });
+    if (isCorrect) break;
+  }
+  return first;
+}
+
 async function runVocabQuestion(container, item, header) {
-  const baseAnswer = await askInput(container, { header, prompt: item.prompt });
-  const baseCorrect = checkBase(item, baseAnswer);
-  await showCorrection(container, {
-    header,
-    isCorrect: baseCorrect,
-    expected: item.en_base,
-    tag: item.type,
-    example: item.example,
-  });
+  const baseCorrect = await askUntilCorrect(
+    container, header, item.prompt,
+    (answer) => checkBase(item, answer),
+    { expected: item.en_base, tag: item.type, example: item.example }
+  );
 
   let conjugationCorrect = true;
   if (item.en_past_simple) {
-    const conjAnswer = await askInput(container, {
-      header,
-      prompt: `Conjugaison de "${item.en_base}" — passé simple / participe passé ?`,
-    });
-    conjugationCorrect = checkConjugation(item, conjAnswer);
-    await showCorrection(container, {
-      header,
-      isCorrect: conjugationCorrect,
-      expected: `${item.en_past_simple} / ${item.en_past_participle}`,
-    });
+    conjugationCorrect = await askUntilCorrect(
+      container, header, `Conjugaison de "${item.en_base}" — passé simple / participe passé ?`,
+      (answer) => checkConjugation(item, answer),
+      { expected: `${item.en_past_simple} / ${item.en_past_participle}` }
+    );
   }
 
   await finalizeVocabItem(item, baseCorrect, conjugationCorrect);
 }
 
 async function runGrammaireQuestion(container, item, header) {
-  const answer = await askInput(container, { header, prompt: item.prompt });
-  const isCorrect = checkAnswer(item, answer);
-  await showCorrection(container, {
-    header,
-    isCorrect,
-    expected: item.en,
-    rule: item.explication,
-  });
+  const isCorrect = await askUntilCorrect(
+    container, header, item.prompt,
+    (answer) => checkAnswer(item, answer),
+    { expected: item.en, rule: item.explication }
+  );
   await finalizeItem(item, isCorrect);
 }
 
 async function runExpressionQuestion(container, item, header) {
-  const answer = await askInput(container, { header, prompt: item.prompt });
-  const isCorrect = checkAnswer(item, answer);
-  await showCorrection(container, {
-    header,
-    isCorrect,
-    expected: item.en,
-    example: item.example,
-  });
+  const isCorrect = await askUntilCorrect(
+    container, header, item.prompt,
+    (answer) => checkAnswer(item, answer),
+    { expected: item.en, example: item.example }
+  );
   await finalizeItem(item, isCorrect);
 }
 
-export async function renderQuiz(container, session, { onComplete }) {
-  for (let i = 0; i < session.length; i++) {
-    const item = session[i];
-    const header = `Question ${i + 1} / ${session.length}`;
+async function runQuestion(container, item, header) {
+  if (item.item_type === 'vocabulaire') await runVocabQuestion(container, item, header);
+  else if (item.item_type === 'grammaire') await runGrammaireQuestion(container, item, header);
+  else if (item.item_type === 'expressions') await runExpressionQuestion(container, item, header);
+}
 
-    if (item.item_type === 'vocabulaire') {
-      await runVocabQuestion(container, item, header);
-    } else if (item.item_type === 'grammaire') {
-      await runGrammaireQuestion(container, item, header);
-    } else if (item.item_type === 'expressions') {
-      await runExpressionQuestion(container, item, header);
-    }
+export async function renderQuiz(container, session, { onComplete }) {
+  const { newItems, reviewItems } = session;
+
+  for (let i = 0; i < newItems.length; i++) {
+    await previewItem(container, newItems[i], `Découverte — ${i + 1} / ${newItems.length}`);
   }
+
+  for (let i = 0; i < newItems.length; i++) {
+    await runQuestion(container, newItems[i], `Nouveaux mots — ${i + 1} / ${newItems.length}`);
+  }
+
+  for (let i = 0; i < reviewItems.length; i++) {
+    await runQuestion(container, reviewItems[i], `Révision — ${i + 1} / ${reviewItems.length}`);
+  }
+
   onComplete();
+}
+
+function levelLabel(row) {
+  if (row.total_reviews === 0) return 'Nouveau';
+  if (row.is_learned) return 'Appris';
+  return String(row.box_level);
+}
+
+export function renderProgress(container) {
+  const rows = getAllProgress();
+
+  rows.sort((a, b) => {
+    if (a.total_reviews === 0 && b.total_reviews !== 0) return -1;
+    if (b.total_reviews === 0 && a.total_reviews !== 0) return 1;
+    if (a.is_learned !== b.is_learned) return a.is_learned - b.is_learned;
+    const da = a.next_review_date ?? '9999-99-99';
+    const db_ = b.next_review_date ?? '9999-99-99';
+    return da.localeCompare(db_);
+  });
+
+  const tableRows = rows.map((row) => `
+    <tr>
+      <td>${escapeHtml(row.item_type)}</td>
+      <td>${escapeHtml(row.prompt)}</td>
+      <td>${escapeHtml(levelLabel(row))}</td>
+      <td>${escapeHtml(row.next_review_date ?? '—')}</td>
+      <td>${escapeHtml(row.correct_streak)}</td>
+      <td>${escapeHtml(row.total_reviews)}</td>
+      <td>${escapeHtml(row.last_result ?? '—')}</td>
+    </tr>
+  `).join('');
+
+  container.innerHTML = `
+    <h1>Progression</h1>
+    <p>${rows.length} item(s) au total.</p>
+    <div class="progress-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Type</th><th>Prompt</th><th>Niveau</th><th>Prochaine révision</th>
+            <th>Série</th><th>Total</th><th>Dernier résultat</th>
+          </tr>
+        </thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+    </div>
+  `;
 }
 
 export function renderSettings(container) {

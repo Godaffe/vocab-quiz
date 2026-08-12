@@ -8,8 +8,7 @@ export function nextLevelOnCorrect(level) {
 }
 
 export function nextLevelOnIncorrect(level) {
-  if (level <= 0) return 0;
-  return Math.max(level - 1, 1);
+  return Math.max(level - 1, 0);
 }
 
 function addDays(isoDate, days) {
@@ -83,7 +82,10 @@ export function getDueItems(todayISO) {
 }
 
 export function countNewIntroducedToday(todayISO) {
-  const row = get("SELECT COUNT(*) as c FROM progress WHERE introduced_at = ?", [todayISO]);
+  const row = get(
+    "SELECT COUNT(*) as c FROM progress WHERE introduced_at = ? AND last_result = 'correct'",
+    [todayISO]
+  );
   return row ? row.c : 0;
 }
 
@@ -108,11 +110,18 @@ function shuffle(arr) {
   return a;
 }
 
+export function getAllProgress() {
+  return all(unionAll('1=1'));
+}
+
 export function buildDailySession(newItemsPerDay, todayISO) {
   const due = getDueItems(todayISO);
   const budget = Math.max(0, newItemsPerDay - countNewIntroducedToday(todayISO));
   const fresh = getNewItemsPool(budget);
   const learnedN = Math.min(3, Math.floor((due.length + fresh.length) * 0.1));
   const learned = getLearnedSample(learnedN);
-  return shuffle([...due, ...fresh, ...learned]);
+  return {
+    newItems: shuffle(fresh),
+    reviewItems: shuffle([...due, ...learned]),
+  };
 }

@@ -1,7 +1,7 @@
 import './style.css';
 import { initDb } from './db.js';
 import { rotateInternalBackup } from './backup.js';
-import { renderImport, renderHome, renderQuiz, renderSettings } from './ui.js';
+import { renderImport, renderHome, renderQuiz, renderSettings, renderProgress } from './ui.js';
 
 if ('storage' in navigator && 'persist' in navigator.storage) {
   navigator.storage.persist();
@@ -12,6 +12,7 @@ const nav = document.createElement('nav');
 nav.innerHTML = `
   <button id="nav-home">Accueil</button>
   <button id="nav-import">Importer</button>
+  <button id="nav-progress">Progression</button>
   <button id="nav-settings">Réglages</button>
 `;
 const screen = document.createElement('div');
@@ -29,6 +30,10 @@ function showSettings() {
   renderSettings(screen);
 }
 
+function showProgress() {
+  renderProgress(screen);
+}
+
 function showQuiz(session) {
   renderQuiz(screen, session, { onComplete: showHome });
 }
@@ -43,6 +48,7 @@ async function main() {
 
   nav.querySelector('#nav-home').addEventListener('click', showHome);
   nav.querySelector('#nav-import').addEventListener('click', showImport);
+  nav.querySelector('#nav-progress').addEventListener('click', showProgress);
   nav.querySelector('#nav-settings').addEventListener('click', showSettings);
 
   showHome();
