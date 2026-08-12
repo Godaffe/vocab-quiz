@@ -51,3 +51,54 @@ p {
   color: var(--color-muted);
   line-height: 1.5;
 }
+
+nav {
+  display: flex;
+  gap: 8px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 16px;
+}
+
+button {
+  font: inherit;
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: var(--color-primary);
+  color: #fff;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+nav button {
+  background: transparent;
+  color: var(--color-text);
+}
+
+input[type="text"] {
+  font: inherit;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text);
+  margin: 8px 0;
+}
+
+.prompt {
+  font-size: 1.25rem;
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.progress-header {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}

@@ -1,7 +1,14 @@
 import { parseWorkbookFile, importFromWorkbook } from './importer.js';
+import { startVocabSession, checkBase, checkConjugation, finalizeVocabItem } from './quiz.js';
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function escapeHtml(str) {
+  return String(str ?? '').replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
 }
 
 function summaryRowHtml(label, s) {
@@ -47,4 +54,83 @@ export function renderImport(container) {
       fileInput.value = '';
     }
   });
+}
+
+export async function renderHome(container, { onStartSession }) {
+  container.innerHTML = '<h1>Vocab Quiz</h1><p>Chargement…</p>';
+  const session = await startVocabSession();
+  container.innerHTML = `
+    <h1>Vocab Quiz</h1>
+    <p>${session.length} mot(s) à réviser aujourd'hui.</p>
+    <button id="start-session-btn" ${session.length === 0 ? 'disabled' : ''}>Commencer la session</button>
+  `;
+  if (session.length > 0) {
+    container.querySelector('#start-session-btn').addEventListener('click', () => onStartSession(session));
+  }
+}
+
+function askInput(container, { header, prompt }) {
+  return new Promise((resolve) => {
+    container.innerHTML = `
+      <p class="progress-header">${escapeHtml(header)}</p>
+      <p class="prompt">${escapeHtml(prompt)}</p>
+      <input type="text" id="answer-input" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
+      <button id="submit-btn">Valider</button>
+    `;
+    const input = container.querySelector('#answer-input');
+    const submit = () => resolve(input.value);
+    container.querySelector('#submit-btn').addEventListener('click', submit);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') submit();
+    });
+    input.focus();
+  });
+}
+
+function showCorrection(container, { header, isCorrect, expected, tag, example }) {
+  return new Promise((resolve) => {
+    container.innerHTML = `
+      <p class="progress-header">${escapeHtml(header)}</p>
+      <p style="color:${isCorrect ? '#16a34a' : '#dc2626'}"><strong>${isCorrect ? 'Correct !' : 'Incorrect'}</strong></p>
+      <p>Réponse attendue : <strong>${escapeHtml(expected)}</strong></p>
+      ${tag ? `<p><em>${escapeHtml(tag)}</em></p>` : ''}
+      ${example ? `<p>Exemple : ${escapeHtml(example)}</p>` : ''}
+      <button id="next-btn">Suivant</button>
+    `;
+    container.querySelector('#next-btn').addEventListener('click', () => resolve());
+  });
+}
+
+export async function renderQuiz(container, session, { onComplete }) {
+  for (let i = 0; i < session.length; i++) {
+    const item = session[i];
+    const header = `Question ${i + 1} / ${session.length}`;
+
+    const baseAnswer = await askInput(container, { header, prompt: item.prompt });
+    const baseCorrect = checkBase(item, baseAnswer);
+    await showCorrection(container, {
+      header,
+      isCorrect: baseCorrect,
+      expected: item.en_base,
+      tag: item.type,
+      example: item.example,
+    });
+
+    let conjugationCorrect = true;
+    if (item.en_past_simple) {
+      const conjAnswer = await askInput(container, {
+        header,
+        prompt: `Conjugaison de "${item.en_base}" — passé simple / participe passé ?`,
+      });
+      conjugationCorrect = checkConjugation(item, conjAnswer);
+      await showCorrection(container, {
+        header,
+        isCorrect: conjugationCorrect,
+        expected: `${item.en_past_simple} / ${item.en_past_participle}`,
+      });
+    }
+
+    await finalizeVocabItem(item, baseCorrect, conjugationCorrect);
+  }
+  onComplete();
 }
