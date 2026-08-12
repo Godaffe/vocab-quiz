@@ -89,6 +89,15 @@ export function getDb() {
   return db;
 }
 
+// Full restore from a backup file: replaces the in-memory DB and the persisted
+// IndexedDB blob entirely (content + progress), unlike importFromWorkbook which merges.
+export async function restoreFromBytes(bytes) {
+  db = new SQL.Database(new Uint8Array(bytes));
+  db.exec(SCHEMA);
+  await save();
+  return db;
+}
+
 export async function save() {
   const bytes = db.export();
   await putBlob(MAIN_KEY, bytes.buffer);

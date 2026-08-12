@@ -47,6 +47,18 @@ h1 {
   margin: 24px 0 8px;
 }
 
+h2 {
+  font-size: 1.1rem;
+  margin: 24px 0 4px;
+  color: var(--color-text);
+}
+
+h3 {
+  font-size: 1rem;
+  margin: 16px 0 4px;
+  color: var(--color-text);
+}
+
 p {
   color: var(--color-muted);
   line-height: 1.5;

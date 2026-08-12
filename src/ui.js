@@ -1,5 +1,7 @@
 import { parseWorkbookFile, importFromWorkbook } from './importer.js';
 import { startSession, checkBase, checkConjugation, finalizeVocabItem, checkAnswer, finalizeItem } from './quiz.js';
+import { getSetting, setSetting } from './db.js';
+import { exportToFile, importFromFile, daysSince } from './backup.js';
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
@@ -168,4 +170,67 @@ export async function renderQuiz(container, session, { onComplete }) {
     }
   }
   onComplete();
+}
+
+export function renderSettings(container) {
+  const n = getSetting('new_items_per_day') ?? '10';
+  const lastExport = getSetting('last_manual_export');
+  const since = daysSince(lastExport);
+  const lastExportText = since === null ? 'jamais' : since === 0 ? "aujourd'hui" : `il y a ${since} jour(s)`;
+
+  container.innerHTML = `
+    <h1>Réglages</h1>
+
+    <h2>Nouveaux items par jour</h2>
+    <p>Nombre maximum de nouveaux mots/règles/expressions introduits chaque jour, tous types confondus.</p>
+    <input type="number" id="n-input" min="1" step="1" value="${escapeHtml(n)}" />
+    <button id="n-save-btn">Enregistrer</button>
+    <p id="n-status"></p>
+
+    <h2>Sauvegarde</h2>
+    <p>Ta progression est stockée uniquement sur cet appareil. Exporte une sauvegarde de temps
+    en temps (par ex. vers Fichiers/iCloud) pour ne rien perdre en cas de problème.</p>
+    <p>Dernier export : <strong>${lastExportText}</strong></p>
+    <button id="export-btn">Exporter une sauvegarde</button>
+
+    <h3>Restaurer une sauvegarde</h3>
+    <p style="color:#dc2626">Attention : remplace entièrement le contenu et la progression actuels par ceux du fichier choisi.</p>
+    <input type="file" id="restore-file" accept=".sqlite" />
+    <p id="restore-status"></p>
+  `;
+
+  container.querySelector('#n-save-btn').addEventListener('click', async () => {
+    const value = parseInt(container.querySelector('#n-input').value, 10);
+    const status = container.querySelector('#n-status');
+    if (!Number.isFinite(value) || value < 1) {
+      status.textContent = 'Merci de saisir un nombre valide (≥ 1).';
+      return;
+    }
+    await setSetting('new_items_per_day', value);
+    status.textContent = 'Enregistré.';
+  });
+
+  container.querySelector('#export-btn').addEventListener('click', async () => {
+    await exportToFile();
+    renderSettings(container);
+  });
+
+  container.querySelector('#restore-file').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const status = container.querySelector('#restore-status');
+    if (!confirm('Ceci va remplacer tout le contenu et toute la progression actuels par la sauvegarde sélectionnée. Continuer ?')) {
+      e.target.value = '';
+      return;
+    }
+    status.textContent = 'Restauration en cours…';
+    try {
+      await importFromFile(file);
+      status.textContent = 'Sauvegarde restaurée avec succès.';
+    } catch (err) {
+      status.textContent = `Erreur : ${err.message}`;
+    } finally {
+      e.target.value = '';
+    }
+  });
 }

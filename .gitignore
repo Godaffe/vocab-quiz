@@ -28,3 +28,6 @@ Liste de voc.xlsx
 
 # Vite PWA dev-mode service worker build artifact
 dev-dist
+
+# Stray downloaded backups (from manual export testing)
+*.sqlite
