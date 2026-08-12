@@ -25,3 +25,6 @@ dist-ssr
 
 # Fichier de vocabulaire personnel (jamais lu au build, reste local)
 Liste de voc.xlsx
+
+# Vite PWA dev-mode service worker build artifact
+dev-dist

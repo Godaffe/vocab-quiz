@@ -3,12 +3,11 @@ import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
   base: '/vocab-quiz/',
-  optimizeDeps: { exclude: ['sql.js'] },
   plugins: [
     VitePWA({
       registerType: 'autoUpdate',
       devOptions: { enabled: true },
-      includeAssets: ['sql-wasm.wasm', 'icons/apple-touch-icon.png', 'icons/*.png'],
+      includeAssets: ['sql-wasm.wasm', 'sql-wasm-browser.wasm', 'icons/apple-touch-icon.png', 'icons/*.png'],
       manifest: {
         name: 'Vocab Quiz',
         short_name: 'Vocab',
