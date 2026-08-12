@@ -1,5 +1,5 @@
 import { parseWorkbookFile, importFromWorkbook } from './importer.js';
-import { startVocabSession, checkBase, checkConjugation, finalizeVocabItem } from './quiz.js';
+import { startSession, checkBase, checkConjugation, finalizeVocabItem, checkAnswer, finalizeItem } from './quiz.js';
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
@@ -58,10 +58,10 @@ export function renderImport(container) {
 
 export async function renderHome(container, { onStartSession }) {
   container.innerHTML = '<h1>Vocab Quiz</h1><p>Chargement…</p>';
-  const session = await startVocabSession();
+  const session = await startSession();
   container.innerHTML = `
     <h1>Vocab Quiz</h1>
-    <p>${session.length} mot(s) à réviser aujourd'hui.</p>
+    <p>${session.length} item(s) à réviser aujourd'hui.</p>
     <button id="start-session-btn" ${session.length === 0 ? 'disabled' : ''}>Commencer la session</button>
   `;
   if (session.length > 0) {
@@ -87,7 +87,7 @@ function askInput(container, { header, prompt }) {
   });
 }
 
-function showCorrection(container, { header, isCorrect, expected, tag, example }) {
+function showCorrection(container, { header, isCorrect, expected, tag, example, rule }) {
   return new Promise((resolve) => {
     container.innerHTML = `
       <p class="progress-header">${escapeHtml(header)}</p>
@@ -95,10 +95,63 @@ function showCorrection(container, { header, isCorrect, expected, tag, example }
       <p>Réponse attendue : <strong>${escapeHtml(expected)}</strong></p>
       ${tag ? `<p><em>${escapeHtml(tag)}</em></p>` : ''}
       ${example ? `<p>Exemple : ${escapeHtml(example)}</p>` : ''}
+      ${rule ? `<p>Règle : ${escapeHtml(rule)}</p>` : ''}
       <button id="next-btn">Suivant</button>
     `;
     container.querySelector('#next-btn').addEventListener('click', () => resolve());
   });
+}
+
+async function runVocabQuestion(container, item, header) {
+  const baseAnswer = await askInput(container, { header, prompt: item.prompt });
+  const baseCorrect = checkBase(item, baseAnswer);
+  await showCorrection(container, {
+    header,
+    isCorrect: baseCorrect,
+    expected: item.en_base,
+    tag: item.type,
+    example: item.example,
+  });
+
+  let conjugationCorrect = true;
+  if (item.en_past_simple) {
+    const conjAnswer = await askInput(container, {
+      header,
+      prompt: `Conjugaison de "${item.en_base}" — passé simple / participe passé ?`,
+    });
+    conjugationCorrect = checkConjugation(item, conjAnswer);
+    await showCorrection(container, {
+      header,
+      isCorrect: conjugationCorrect,
+      expected: `${item.en_past_simple} / ${item.en_past_participle}`,
+    });
+  }
+
+  await finalizeVocabItem(item, baseCorrect, conjugationCorrect);
+}
+
+async function runGrammaireQuestion(container, item, header) {
+  const answer = await askInput(container, { header, prompt: item.prompt });
+  const isCorrect = checkAnswer(item, answer);
+  await showCorrection(container, {
+    header,
+    isCorrect,
+    expected: item.en,
+    rule: item.explication,
+  });
+  await finalizeItem(item, isCorrect);
+}
+
+async function runExpressionQuestion(container, item, header) {
+  const answer = await askInput(container, { header, prompt: item.prompt });
+  const isCorrect = checkAnswer(item, answer);
+  await showCorrection(container, {
+    header,
+    isCorrect,
+    expected: item.en,
+    example: item.example,
+  });
+  await finalizeItem(item, isCorrect);
 }
 
 export async function renderQuiz(container, session, { onComplete }) {
@@ -106,31 +159,13 @@ export async function renderQuiz(container, session, { onComplete }) {
     const item = session[i];
     const header = `Question ${i + 1} / ${session.length}`;
 
-    const baseAnswer = await askInput(container, { header, prompt: item.prompt });
-    const baseCorrect = checkBase(item, baseAnswer);
-    await showCorrection(container, {
-      header,
-      isCorrect: baseCorrect,
-      expected: item.en_base,
-      tag: item.type,
-      example: item.example,
-    });
-
-    let conjugationCorrect = true;
-    if (item.en_past_simple) {
-      const conjAnswer = await askInput(container, {
-        header,
-        prompt: `Conjugaison de "${item.en_base}" — passé simple / participe passé ?`,
-      });
-      conjugationCorrect = checkConjugation(item, conjAnswer);
-      await showCorrection(container, {
-        header,
-        isCorrect: conjugationCorrect,
-        expected: `${item.en_past_simple} / ${item.en_past_participle}`,
-      });
+    if (item.item_type === 'vocabulaire') {
+      await runVocabQuestion(container, item, header);
+    } else if (item.item_type === 'grammaire') {
+      await runGrammaireQuestion(container, item, header);
+    } else if (item.item_type === 'expressions') {
+      await runExpressionQuestion(container, item, header);
     }
-
-    await finalizeVocabItem(item, baseCorrect, conjugationCorrect);
   }
   onComplete();
 }
