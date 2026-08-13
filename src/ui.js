@@ -1,8 +1,11 @@
 import { parseWorkbookFile, importFromWorkbook } from './importer.js';
-import { startSession, checkBase, checkConjugation, finalizeVocabItem, checkAnswer, finalizeItem } from './quiz.js';
+import {
+  startSession, checkBase, checkConjugation, finalizeVocabItem, checkAnswer, finalizeItem,
+  checkReverse, gradeHardAttempt,
+} from './quiz.js';
 import { getSetting, setSetting } from './db.js';
 import { exportToFile, importFromFile, daysSince } from './backup.js';
-import { getAllProgress } from './leitner.js';
+import { getAllProgress, advancedPhase, demotedPhase } from './leitner.js';
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
@@ -62,10 +65,11 @@ export function renderImport(container) {
 export async function renderHome(container, { onStartSession }) {
   container.innerHTML = '<h1>Vocab Quiz</h1><p>Chargement…</p>';
   const session = await startSession();
-  const total = session.newItems.length + session.reviewItems.length;
+  const total = session.hardItems.length + session.newItems.length + session.reviewItems.length;
   container.innerHTML = `
     <h1>Vocab Quiz</h1>
-    <p>${session.newItems.length} nouveau(x), ${session.reviewItems.length} en révision aujourd'hui.</p>
+    <p>${session.hardItems.length} en mode compliqué, ${session.newItems.length} nouveau(x),
+    ${session.reviewItems.length} en révision aujourd'hui.</p>
     <button id="start-session-btn" ${total === 0 ? 'disabled' : ''}>Commencer la session</button>
   `;
   if (total > 0) {
@@ -73,11 +77,12 @@ export async function renderHome(container, { onStartSession }) {
   }
 }
 
-function askInput(container, { header, prompt }) {
+function askInput(container, { header, prompt, hint }) {
   return new Promise((resolve) => {
     container.innerHTML = `
       <p class="progress-header">${escapeHtml(header)}</p>
       <p class="prompt">${escapeHtml(prompt)}</p>
+      ${hint ? `<p><em>${escapeHtml(hint)}</em></p>` : ''}
       <input type="text" id="answer-input" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
       <button id="submit-btn">Valider</button>
     `;
@@ -192,8 +197,75 @@ async function runQuestion(container, item, header) {
   else if (item.item_type === 'expressions') await runExpressionQuestion(container, item, header);
 }
 
+// "Mots compliqués" — Phase 1: En -> Fr/Meaning, no hint. Phase 2: Fr/Meaning -> En, hangman
+// hint. Phase 3: Fr/Meaning -> En, no hint (same question as the normal circuit).
+function maskWord(word) {
+  if (word.length <= 2) return word;
+  return word[0] + '_'.repeat(word.length - 2) + word[word.length - 1];
+}
+
+// Vocabulaire masks each word of the base translation individually; Grammaire/Expressions
+// mask the whole answer as a single block (spaces included in the mask).
+function maskHint(itemType, text) {
+  if (itemType === 'vocabulaire') {
+    return text.split(' ').map(maskWord).join(' ');
+  }
+  return maskWord(text);
+}
+
+function hardModeQuestion(item, phase) {
+  const forwardExpected = item.item_type === 'vocabulaire' ? item.en_base : item.en;
+  const forwardCheck = item.item_type === 'vocabulaire'
+    ? (answer) => checkBase(item, answer)
+    : (answer) => checkAnswer(item, answer);
+
+  if (phase === 1) {
+    return { prompt: forwardExpected, expected: item.prompt, hint: null, checkFn: (answer) => checkReverse(item, answer) };
+  }
+  if (phase === 2) {
+    return { prompt: item.prompt, expected: forwardExpected, hint: maskHint(item.item_type, forwardExpected), checkFn: forwardCheck };
+  }
+  return { prompt: item.prompt, expected: forwardExpected, hint: null, checkFn: forwardCheck };
+}
+
+async function runHardModeItem(container, item) {
+  let phase = item.hard_phase;
+  while (true) {
+    const { prompt, expected, hint, checkFn } = hardModeQuestion(item, phase);
+    const header = `Mots compliqués — ${item.prompt}`;
+    const answer = await askInput(container, { header, prompt, hint });
+    const isCorrect = checkFn(answer);
+
+    if (isCorrect && phase === 3) {
+      await gradeHardAttempt(item, phase, true);
+      await showPreview(container, { header, prompt, answer: expected, tag: 'Sorti du mode compliqué !' });
+      return;
+    }
+
+    const result = await gradeHardAttempt(item, phase, isCorrect);
+
+    if (isCorrect) {
+      phase = advancedPhase(phase, item.item_type);
+      continue;
+    }
+
+    await showPreview(container, { header, prompt, answer: expected });
+    if (result.cappedToday) {
+      await showPreview(container, {
+        header, prompt: "Trop d'erreurs sur cet item aujourd'hui", answer: 'On retente demain.',
+      });
+      return;
+    }
+    phase = demotedPhase(phase, item.item_type);
+  }
+}
+
 export async function renderQuiz(container, session, { onComplete }) {
-  const { newItems, reviewItems } = session;
+  const { hardItems, newItems, reviewItems } = session;
+
+  for (let i = 0; i < hardItems.length; i++) {
+    await runHardModeItem(container, hardItems[i]);
+  }
 
   for (let i = 0; i < newItems.length; i++) {
     await previewItem(container, newItems[i], `Découverte — ${i + 1} / ${newItems.length}`);
@@ -211,6 +283,7 @@ export async function renderQuiz(container, session, { onComplete }) {
 }
 
 function levelLabel(row) {
+  if (row.learning_process === 'hard') return `Compliqué (Phase ${row.hard_phase})`;
   if (row.total_reviews === 0) return 'Nouveau';
   if (row.is_learned) return 'Appris';
   return String(row.box_level);

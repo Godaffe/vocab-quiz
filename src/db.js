@@ -47,6 +47,12 @@ CREATE TABLE IF NOT EXISTS progress (
   correct_streak INTEGER NOT NULL DEFAULT 0,
   total_reviews INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
+  learning_process TEXT NOT NULL DEFAULT 'normal',
+  consecutive_failures INTEGER NOT NULL DEFAULT 0,
+  hard_phase INTEGER,
+  hard_failures_today INTEGER NOT NULL DEFAULT 0,
+  hard_session_date TEXT,
+  needs_preview INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (item_type, item_key)
 );
 
@@ -64,6 +70,28 @@ const DEFAULT_SETTINGS = {
 let SQL = null;
 let db = null;
 
+// Adds progress columns introduced after the table already existed in production (CREATE
+// TABLE IF NOT EXISTS is a no-op on an existing table, so new columns need an explicit,
+// idempotent ALTER TABLE migration to reach installs with real user data).
+const PROGRESS_COLUMN_MIGRATIONS = [
+  "ALTER TABLE progress ADD COLUMN learning_process TEXT NOT NULL DEFAULT 'normal'",
+  'ALTER TABLE progress ADD COLUMN consecutive_failures INTEGER NOT NULL DEFAULT 0',
+  'ALTER TABLE progress ADD COLUMN hard_phase INTEGER',
+  'ALTER TABLE progress ADD COLUMN hard_failures_today INTEGER NOT NULL DEFAULT 0',
+  'ALTER TABLE progress ADD COLUMN hard_session_date TEXT',
+  'ALTER TABLE progress ADD COLUMN needs_preview INTEGER NOT NULL DEFAULT 0',
+];
+
+function migrateProgressColumns() {
+  const existingColumns = new Set(db.exec('PRAGMA table_info(progress)')[0]?.values.map((row) => row[1]) ?? []);
+  for (const statement of PROGRESS_COLUMN_MIGRATIONS) {
+    const columnName = statement.match(/ADD COLUMN (\w+)/)[1];
+    if (!existingColumns.has(columnName)) {
+      db.exec(statement);
+    }
+  }
+}
+
 export async function initDb() {
   if (db) return db;
 
@@ -75,6 +103,7 @@ export async function initDb() {
   db = existing ? new SQL.Database(new Uint8Array(existing)) : new SQL.Database();
 
   db.exec(SCHEMA);
+  migrateProgressColumns();
 
   for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
     db.run('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', [key, value]);
@@ -94,6 +123,7 @@ export function getDb() {
 export async function restoreFromBytes(bytes) {
   db = new SQL.Database(new Uint8Array(bytes));
   db.exec(SCHEMA);
+  migrateProgressColumns();
   await save();
   return db;
 }

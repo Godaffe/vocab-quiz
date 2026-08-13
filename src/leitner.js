@@ -21,10 +21,20 @@ export async function gradeAnswer(itemType, itemKey, isCorrect, todayISO) {
   const row = get('SELECT * FROM progress WHERE item_type = ? AND item_key = ?', [itemType, itemKey]);
   if (!row) throw new Error(`No progress row for ${itemType}/${itemKey}`);
 
-  const introducedAt = row.total_reviews === 0 ? todayISO : row.introduced_at;
+  // needs_preview items (just graduated from the "mots compliqués" process) are re-stamped as
+  // introduced today too, so they count against today's new-word budget like a real new item.
+  const introducedAt = (row.total_reviews === 0 || row.needs_preview) ? todayISO : row.introduced_at;
   let boxLevel, isLearned, nextReviewDate, correctStreak;
 
-  if (isCorrect) {
+  const consecutiveFailures = isCorrect ? 0 : row.consecutive_failures + 1;
+  const enteringHard = !isCorrect && consecutiveFailures >= 3;
+
+  if (enteringHard) {
+    boxLevel = 0;
+    isLearned = 0;
+    nextReviewDate = null;
+    correctStreak = 0;
+  } else if (isCorrect) {
     const { level, learned } = nextLevelOnCorrect(row.box_level);
     boxLevel = level;
     isLearned = learned ? 1 : 0;
@@ -40,7 +50,9 @@ export async function gradeAnswer(itemType, itemKey, isCorrect, todayISO) {
   run(
     `UPDATE progress SET
        box_level = ?, is_learned = ?, next_review_date = ?, introduced_at = ?,
-       last_result = ?, last_reviewed_at = ?, correct_streak = ?, total_reviews = total_reviews + 1
+       last_result = ?, last_reviewed_at = ?, correct_streak = ?, total_reviews = total_reviews + 1,
+       consecutive_failures = ?, needs_preview = 0,
+       learning_process = ?, hard_phase = ?, hard_failures_today = ?, hard_session_date = ?
      WHERE item_type = ? AND item_key = ?`,
     [
       boxLevel,
@@ -50,11 +62,72 @@ export async function gradeAnswer(itemType, itemKey, isCorrect, todayISO) {
       isCorrect ? 'correct' : 'incorrect',
       new Date().toISOString(),
       correctStreak,
+      consecutiveFailures,
+      enteringHard ? 'hard' : 'normal',
+      enteringHard ? 1 : row.hard_phase,
+      enteringHard ? 0 : row.hard_failures_today,
+      enteringHard ? todayISO : row.hard_session_date,
       itemType,
       itemKey,
     ]
   );
   await save();
+}
+
+// Called on a Phase 3 success in the "mots compliqués" process: the item returns to the
+// normal circuit at box_level 0, and reappears tomorrow like a brand-new item (previewed,
+// then tested, and counted against the day's new-word budget).
+export async function exitHardMode(itemType, itemKey, todayISO) {
+  run(
+    `UPDATE progress SET
+       learning_process = 'normal', hard_phase = NULL, hard_failures_today = 0, hard_session_date = NULL,
+       needs_preview = 1, consecutive_failures = 2, box_level = 0, is_learned = 0,
+       next_review_date = ?, last_result = 'correct', last_reviewed_at = ?,
+       correct_streak = correct_streak + 1, total_reviews = total_reviews + 1
+     WHERE item_type = ? AND item_key = ?`,
+    [addDays(todayISO, 1), new Date().toISOString(), itemType, itemKey]
+  );
+  await save();
+}
+
+// Phase 1/2 attempts, and failed Phase 3 attempts, within the "mots compliqués" process.
+// A successful Phase 3 attempt is handled by exitHardMode instead, not this function.
+export async function recordHardAttempt(itemType, itemKey, isCorrect, currentPhase, todayISO) {
+  const row = get('SELECT * FROM progress WHERE item_type = ? AND item_key = ?', [itemType, itemKey]);
+  if (!row) throw new Error(`No progress row for ${itemType}/${itemKey}`);
+
+  let hardPhase = currentPhase;
+  let hardFailuresToday = row.hard_failures_today;
+  let cappedToday = false;
+
+  if (isCorrect) {
+    hardPhase = advancedPhase(currentPhase, itemType);
+  } else {
+    hardFailuresToday += 1;
+    cappedToday = hardFailuresToday >= 9;
+    if (!cappedToday) hardPhase = demotedPhase(currentPhase, itemType);
+  }
+
+  run(
+    `UPDATE progress SET
+       total_reviews = total_reviews + 1, last_reviewed_at = ?, last_result = ?,
+       hard_phase = ?, hard_failures_today = ?
+     WHERE item_type = ? AND item_key = ?`,
+    [new Date().toISOString(), isCorrect ? 'correct' : 'incorrect', hardPhase, hardFailuresToday, itemType, itemKey]
+  );
+  await save();
+
+  return { hardFailuresToday, cappedToday };
+}
+
+export function advancedPhase(currentPhase, itemType) {
+  if (currentPhase === 1) return itemType === 'grammaire' ? 3 : 2;
+  return 3; // phase 2 -> 3 (a phase-3 success exits the process via exitHardMode, not this fn)
+}
+
+export function demotedPhase(currentPhase, itemType) {
+  if (currentPhase === 3) return itemType === 'grammaire' ? 1 : 2;
+  return 1; // phase 1 or phase 2 failed -> (re)descend to phase 1
 }
 
 // All three branches must expose the same column list (SQLite UNION ALL requires matching
@@ -78,7 +151,9 @@ function unionAll(clause) {
 }
 
 export function getDueItems(todayISO) {
-  return all(unionAll(`is_learned = 0 AND total_reviews > 0 AND next_review_date <= '${todayISO}'`));
+  return all(unionAll(
+    `learning_process = 'normal' AND is_learned = 0 AND total_reviews > 0 AND next_review_date <= '${todayISO}'`
+  ));
 }
 
 export function countNewIntroducedToday(todayISO) {
@@ -89,16 +164,39 @@ export function countNewIntroducedToday(todayISO) {
   return row ? row.c : 0;
 }
 
-export function getNewItemsPool(budget) {
+export function getNewItemsPool(budget, todayISO) {
   if (budget <= 0) return [];
   // Shuffled rather than sorted by type: sorting alphabetically would let "expressions"
-  // starve "vocabulaire"/"grammaire" out of the shared daily budget entirely.
-  return shuffle(all(unionAll('total_reviews = 0'))).slice(0, budget);
+  // starve "vocabulaire"/"grammaire" out of the shared daily budget entirely. Includes both
+  // genuinely new items and items graduating back from "mots compliqués" (needs_preview).
+  return shuffle(all(unionAll(
+    `(total_reviews = 0 OR (needs_preview = 1 AND next_review_date <= '${todayISO}')) AND learning_process = 'normal'`
+  ))).slice(0, budget);
 }
 
 export function getLearnedSample(n) {
   if (n <= 0) return [];
-  return shuffle(all(unionAll('is_learned = 1'))).slice(0, n);
+  return shuffle(all(unionAll("is_learned = 1 AND learning_process = 'normal'"))).slice(0, n);
+}
+
+export async function getHardModeItems(todayISO) {
+  const items = all(unionAll("learning_process = 'hard'"));
+  let changed = false;
+  for (const item of items) {
+    if (item.hard_session_date !== todayISO) {
+      run(
+        `UPDATE progress SET hard_phase = 1, hard_failures_today = 0, hard_session_date = ?
+         WHERE item_type = ? AND item_key = ?`,
+        [todayISO, item.item_type, item.item_key]
+      );
+      item.hard_phase = 1;
+      item.hard_failures_today = 0;
+      item.hard_session_date = todayISO;
+      changed = true;
+    }
+  }
+  if (changed) await save();
+  return items;
 }
 
 function shuffle(arr) {
@@ -114,13 +212,15 @@ export function getAllProgress() {
   return all(unionAll('1=1'));
 }
 
-export function buildDailySession(newItemsPerDay, todayISO) {
+export async function buildDailySession(newItemsPerDay, todayISO) {
+  const hardItems = await getHardModeItems(todayISO);
   const due = getDueItems(todayISO);
   const budget = Math.max(0, newItemsPerDay - countNewIntroducedToday(todayISO));
-  const fresh = getNewItemsPool(budget);
+  const fresh = getNewItemsPool(budget, todayISO);
   const learnedN = Math.min(3, Math.floor((due.length + fresh.length) * 0.1));
   const learned = getLearnedSample(learnedN);
   return {
+    hardItems,
     newItems: shuffle(fresh),
     reviewItems: shuffle([...due, ...learned]),
   };

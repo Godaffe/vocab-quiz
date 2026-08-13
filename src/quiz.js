@@ -1,5 +1,5 @@
 import { getSetting } from './db.js';
-import { buildDailySession, gradeAnswer } from './leitner.js';
+import { buildDailySession, gradeAnswer, exitHardMode, recordHardAttempt } from './leitner.js';
 import { answersMatch } from './normalize.js';
 
 function todayISO() {
@@ -37,4 +37,19 @@ export function checkAnswer(item, answer) {
 export async function finalizeItem(item, isCorrect) {
   await gradeAnswer(item.item_type, item.item_key, isCorrect, todayISO());
   return isCorrect;
+}
+
+// Phase 1 of "mots compliqués" (En -> Fr/Meaning): item.prompt already holds the fr/meaning
+// side for all 3 types, so this is just the mirror of the normal-direction checks above.
+export function checkReverse(item, answer) {
+  return answersMatch(answer, item.prompt, { tolerant: false });
+}
+
+export async function gradeHardAttempt(item, phase, isCorrect, today = todayISO()) {
+  if (isCorrect && phase === 3) {
+    await exitHardMode(item.item_type, item.item_key, today);
+    return { exited: true };
+  }
+  const result = await recordHardAttempt(item.item_type, item.item_key, isCorrect, phase, today);
+  return { exited: false, ...result };
 }
