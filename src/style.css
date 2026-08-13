@@ -498,8 +498,6 @@ th, td {
   align-self: center;
 }
 
-/* Pile des deux blocs d'info : ils se chevauchent légèrement pour donner
-   l'impression de feuilles empilées l'une sur l'autre. */
 .answer-stack {
   margin-top: 18px;
 }
@@ -540,10 +538,8 @@ th, td {
   box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.35);
 }
 
-/* Le chevauchement ne s'applique que quand les deux blocs coexistent. */
 .answer-block--fr + .answer-block--example {
-  margin-top: -8px;
-  padding-top: 18px;
+  margin-top: 12px;
 }
 
 .dot-progress {
