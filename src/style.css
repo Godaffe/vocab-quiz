@@ -9,9 +9,12 @@
   --color-accent-fr-bg: #16351F;
   --color-streak: #F0997B;
   --color-streak-strong: #712B13;
-  --color-correct-bg: #163B2E;
-  --color-incorrect-bg: #3B1D18;
-  --color-example-bg: #1B2733;
+  --color-correct-bg: #12805C;
+  --color-incorrect-bg: #A33A22;
+  --color-example-bg: #0A2440;
+  --color-example-text: #C9DDF2;
+  --color-cta: #1D9E75;
+  --color-cta-text: #042C53;
   color-scheme: dark;
 }
 
@@ -30,15 +33,31 @@ body {
   color: var(--color-text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
 }
 
 #app {
   max-width: 480px;
   margin: 0 auto;
-  min-height: 100vh;
+  min-height: 100dvh;
   padding: env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 76px);
   display: flex;
   flex-direction: column;
+}
+
+/* Pendant une session, la nav du bas est masquée : on récupère son espace. */
+body.in-session #app {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+body.in-session .bottom-nav {
+  display: none;
+}
+
+#screen {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
 }
 
 h1 {
@@ -71,6 +90,12 @@ button {
   background: var(--color-surface-alt);
   color: var(--color-text);
   cursor: pointer;
+  transition: transform 0.08s ease, filter 0.08s ease;
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.97);
+  filter: brightness(1.1);
 }
 
 button:disabled {
@@ -78,15 +103,35 @@ button:disabled {
   cursor: not-allowed;
 }
 
+/* Bouton d'action principal d'une carte : pleine largeur, poussé tout en bas
+   de la carte (donc en bas de l'écran) pour rester sous le pouce. */
+.btn-primary {
+  margin-top: auto;
+  width: 100%;
+  min-height: 56px;
+  border: none;
+  border-radius: 14px;
+  background: var(--color-cta);
+  color: var(--color-cta-text);
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
 input[type="text"], input[type="number"] {
   font: inherit;
   width: 100%;
-  padding: 10px 12px;
-  border-radius: 8px;
+  padding: 14px 16px;
+  border-radius: 12px;
   border: 1px solid var(--color-border);
   background: var(--color-surface);
   color: var(--color-text);
   margin: 8px 0;
+}
+
+/* ≥16px évite le zoom automatique d'iOS au focus du champ. */
+.flashcard input[type="text"] {
+  font-size: 1.15rem;
+  min-height: 56px;
 }
 
 .prompt {
@@ -106,13 +151,50 @@ input[type="text"], input[type="number"] {
   overflow-x: auto;
 }
 
+/* --- Coque de session --- */
+
+.mode-shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.mode-topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0 12px;
+}
+
+.mode-topbar .progress-bar {
+  flex: 1;
+}
+
+.mode-counter {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+#question-area {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
 .exit-btn {
   background: transparent;
   border-color: transparent;
   color: var(--color-muted);
-  font-size: 0.85rem;
-  padding: 4px 8px;
-  margin-bottom: 12px;
+  font-size: 1.2rem;
+  line-height: 1;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  flex-shrink: 0;
 }
 
 table {
@@ -181,8 +263,8 @@ th, td {
   text-align: left;
   background: var(--color-surface);
   border: none;
-  border-radius: 16px;
-  padding: 16px;
+  border-radius: 18px;
+  padding: 18px;
   margin-bottom: 12px;
   cursor: pointer;
 }
@@ -193,14 +275,25 @@ th, td {
 }
 
 .session-card .session-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-weight: 600;
-  margin-bottom: 4px;
+  font-size: 1.05rem;
+  margin-bottom: 6px;
 }
 
 .session-card .session-card-count {
-  font-size: 0.9rem;
-  color: var(--color-muted);
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--color-text);
   margin-bottom: 10px;
+}
+
+.session-card .session-card-count small {
+  font-size: 0.9rem;
+  font-weight: 400;
+  color: var(--color-muted);
 }
 
 .progress-bar {
@@ -226,8 +319,9 @@ th, td {
 .compact-card {
   background: var(--color-surface);
   border: none;
-  border-radius: 16px;
-  padding: 14px;
+  border-radius: 18px;
+  padding: 16px;
+  min-height: 108px;
   text-align: left;
   cursor: pointer;
 }
@@ -237,9 +331,16 @@ th, td {
   cursor: not-allowed;
 }
 
+.compact-card .compact-card-icon {
+  font-size: 1.3rem;
+  line-height: 1;
+  margin-bottom: 6px;
+}
+
 .compact-card .compact-card-value {
-  font-size: 1.4rem;
+  font-size: 1.9rem;
   font-weight: 700;
+  line-height: 1.1;
   color: var(--color-streak);
 }
 
@@ -259,6 +360,21 @@ th, td {
   flex-direction: column;
   background: var(--color-surface);
   touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* La carte remplit la hauteur restante de la coque, ce qui pousse son bouton
+   d'action (.btn-primary, margin-top:auto) tout en bas de l'écran. */
+.flashcard--fill {
+  flex: 1;
+  min-height: 0;
+}
+
+/* Le champ de saisie reste sélectionnable malgré le user-select de la carte. */
+.flashcard input {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .flashcard--discover {
@@ -274,10 +390,26 @@ th, td {
 
 .flashcard--correct {
   background: var(--color-correct-bg);
+  cursor: pointer;
 }
 
 .flashcard--incorrect {
   background: var(--color-incorrect-bg);
+  cursor: pointer;
+}
+
+/* Cartes résultat : le fond est vif, tout le texte passe en clair pour rester
+   lisible (y compris les blocs internes qui utilisent --color-muted ailleurs). */
+.flashcard--correct p,
+.flashcard--incorrect p,
+.flashcard--correct .answer-block,
+.flashcard--incorrect .answer-block {
+  color: var(--color-text);
+}
+
+.flashcard--correct .answer-block,
+.flashcard--incorrect .answer-block {
+  background: rgba(4, 44, 83, 0.35);
 }
 
 .flashcard--retry {
@@ -327,7 +459,8 @@ th, td {
 }
 
 .flashcard-result-icon {
-  font-size: 1.5rem;
+  font-size: 3rem;
+  line-height: 1;
   margin-bottom: 8px;
 }
 
@@ -345,7 +478,7 @@ th, td {
 
 .answer-block--example {
   background: var(--color-example-bg);
-  color: var(--color-muted);
+  color: var(--color-example-text);
 }
 
 .dot-progress {

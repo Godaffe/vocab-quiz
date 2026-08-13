@@ -21,7 +21,10 @@ nav.innerHTML = `
   <button id="nav-settings" aria-label="Réglages">⚙️</button>
 `;
 
+// Toute sortie de session passe par l'une des 3 routes ci-dessous : c'est donc ici qu'on
+// lève la classe posée par renderModeShell, qui masque la nav du bas pendant une session.
 function setActiveNav(id) {
+  document.body.classList.remove('in-session');
   nav.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.id === id));
 }
 

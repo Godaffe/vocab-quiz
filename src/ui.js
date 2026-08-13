@@ -9,7 +9,7 @@ import {
   getAllProgress, advancedPhase, demotedPhase, getFailedWordsPool,
   getStreak, getLearnedCount, getInProgressCount, countNewIntroducedToday,
 } from './leitner.js';
-import { renderFlashcard, onSwipe } from './card.js';
+import { renderFlashcard, onSwipe, onCardTap } from './card.js';
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
@@ -70,23 +70,25 @@ export async function renderHome(container, { onStartHard, onStartLearning, onSt
       </div>
     </div>
     <button class="session-card" id="start-learning-btn" ${newRemaining === 0 ? 'disabled' : ''}>
-      <div class="session-card-title">Mots nouveaux</div>
-      <div class="session-card-count">${newRemaining} / ${dailyBudget}</div>
+      <div class="session-card-title">✨ Mots nouveaux</div>
+      <div class="session-card-count">${newRemaining} <small>/ ${dailyBudget} aujourd'hui</small></div>
       <div class="progress-bar"><div class="progress-bar-fill" style="width:${newPct}%"></div></div>
     </button>
     <button class="session-card" id="start-review-btn" ${reviewRemaining === 0 ? 'disabled' : ''}>
-      <div class="session-card-title">Révision</div>
-      <div class="session-card-count">${reviewRemaining} mot(s) à réviser</div>
+      <div class="session-card-title">🔄 Révision</div>
+      <div class="session-card-count">${reviewRemaining} <small>mot(s) à réviser</small></div>
       <div class="progress-bar"><div class="progress-bar-fill" style="width:0%"></div></div>
     </button>
     <div class="compact-row">
       <button class="compact-card" id="start-hard-btn" ${session.hardItems.length === 0 ? 'disabled' : ''}>
+        <div class="compact-card-icon">🧗</div>
         <div class="compact-card-value">${session.hardItems.length}</div>
         <div class="compact-card-label">Mots compliqués</div>
       </button>
       <button class="compact-card" id="start-failed-btn" ${failedWords.length === 0 ? 'disabled' : ''}>
+        <div class="compact-card-icon">🎯</div>
         <div class="compact-card-value">${failedWords.length}</div>
-        <div class="compact-card-label">Réviser mes mots ratés</div>
+        <div class="compact-card-label">Mots ratés</div>
       </button>
     </div>
   `;
@@ -109,11 +111,13 @@ export async function renderHome(container, { onStartHard, onStartLearning, onSt
 function questionCard(area, { prompt, hint, badge, variant = 'question', index, total }) {
   return new Promise((resolve) => {
     const body = renderFlashcard(area, { variant, badge, dotsTotal: total, dotsFilled: index });
+    // enterkeyhint="go" : iOS remplace la touche « retour » par une touche d'action
+    // colorée, ce qui permet de valider sans jamais quitter le clavier.
     body.innerHTML = `
       <p class="prompt">${escapeHtml(prompt)}</p>
       ${hint ? `<p class="flashcard-hint">${escapeHtml(hint)}</p>` : ''}
-      <input type="text" id="answer-input" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
-      <button id="submit-btn">Valider</button>
+      <input type="text" id="answer-input" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go" />
+      <button id="submit-btn" class="btn-primary">Valider</button>
     `;
     const input = body.querySelector('#answer-input');
     const submit = () => resolve(input.value);
@@ -142,9 +146,10 @@ function resultCard(area, { isCorrect, prompt, expected, tag, example, rule, bad
       <div class="flashcard-word">${escapeHtml(expected)}</div>
       ${prompt ? `<div class="answer-block answer-block--fr">${escapeHtml(prompt)}</div>` : ''}
       ${(example || rule) ? `<div class="answer-block answer-block--example">${escapeHtml(example || rule)}</div>` : ''}
-      <button id="next-btn">${isCorrect ? 'Suivant' : 'Réessayer'}</button>
+      <button id="next-btn" class="btn-primary">${isCorrect ? 'Suivant' : 'Réessayer'}</button>
     `;
-    body.querySelector('#next-btn').addEventListener('click', () => resolve());
+    // Un clic n'importe où sur la carte suffit à continuer : plus besoin de viser le bouton.
+    onCardTap(area.querySelector('.flashcard'), () => resolve());
   });
 }
 
@@ -157,16 +162,19 @@ function discoverCard(area, { prompt, answer, tag, example, index, total }) {
         <div class="flashcard-word">${escapeHtml(answer)}</div>
         ${tag ? `<p><em>${escapeHtml(tag)}</em></p>` : ''}
         ${example ? `<div class="answer-block answer-block--example">${escapeHtml(example)}</div>` : ''}
-        <button id="next-btn">Suivant</button>
+        <button id="next-btn" class="btn-primary">Suivant</button>
       ` : `
         <div class="flashcard-word">${escapeHtml(prompt)}</div>
-        <p>Glisse pour voir la traduction</p>
+        <p>Touche la carte pour voir la traduction</p>
       `;
       const card = area.querySelector('.flashcard');
-      onSwipe(card, {
-        onLeft: () => { flipped = !flipped; render(); },
-        onRight: () => { flipped = !flipped; render(); },
-        onUp: () => resolve(),
+      const flip = () => { flipped = !flipped; render(); };
+      onSwipe(card, { onLeft: flip, onRight: flip, onUp: () => resolve() });
+      // Tap pour retourner la carte — le geste attendu sur une flashcard. Le bouton
+      // « Suivant » de la face retournée ne doit pas la re-retourner au passage.
+      onCardTap(card, (e) => {
+        if (e.target.closest('#next-btn')) return;
+        flip();
       });
       const nextBtn = body.querySelector('#next-btn');
       if (nextBtn) nextBtn.addEventListener('click', () => resolve());
@@ -323,13 +331,32 @@ async function runHardModeRound(container, item, targetPhase) {
   }
 }
 
+// Coque plein écran d'une session : barre du haut (quitter + progression) puis la carte,
+// qui occupe toute la hauteur restante — c'est ce qui pousse le bouton d'action en bas de
+// l'écran. La nav du bas est masquée le temps de la session (classe sur <body>), retirée
+// par showHome/showProgress/showSettings dans main.js, par où passent toutes les sorties.
 function renderModeShell(container, onExit) {
+  document.body.classList.add('in-session');
   container.innerHTML = `
-    <button id="exit-btn" class="exit-btn">Quitter</button>
-    <div id="question-area"></div>
+    <div class="mode-shell">
+      <div class="mode-topbar">
+        <button id="exit-btn" class="exit-btn" aria-label="Quitter">✕</button>
+        <div class="progress-bar"><div class="progress-bar-fill" id="mode-progress" style="width:0%"></div></div>
+        <span class="mode-counter" id="mode-counter"></span>
+      </div>
+      <div id="question-area"></div>
+    </div>
   `;
   container.querySelector('#exit-btn').addEventListener('click', onExit);
-  return container.querySelector('#question-area');
+
+  const fill = container.querySelector('#mode-progress');
+  const counter = container.querySelector('#mode-counter');
+  const setProgress = (index, total) => {
+    counter.textContent = total > 0 ? `${index + 1} / ${total}` : '';
+    fill.style.width = total > 0 ? `${Math.round((index / total) * 100)}%` : '0%';
+  };
+
+  return { area: container.querySelector('#question-area'), setProgress };
 }
 
 // All items are asked at phase 1 first, then all items still active at phase 2, then phase 3
@@ -337,41 +364,54 @@ function renderModeShell(container, onExit) {
 // drained first each iteration, so an item demoted back to phase 1 (a phase-2 failure) is
 // reprocessed there ahead of the remaining phase-2/3 items, same as any other phase-1 item.
 export async function renderHardMode(container, { hardItems }, { onComplete, onExit }) {
-  const area = renderModeShell(container, onExit);
+  const { area, setProgress } = renderModeShell(container, onExit);
   const queues = { 1: [], 2: [], 3: [] };
   for (const item of hardItems) queues[item.hard_phase].push(item);
 
+  // Chaque item doit franchir 3 phases : la progression compte les franchissements
+  // réussis, pas les items, puisqu'un item peut redescendre de phase.
+  const total = hardItems.length * 3;
+  let done = 0;
   while (queues[1].length || queues[2].length || queues[3].length) {
+    setProgress(done, total);
     const phase = queues[1].length ? 1 : queues[2].length ? 2 : 3;
     const item = queues[phase].shift();
     const outcome = await runHardModeRound(area, item, phase);
+    done = Math.min(done + 1, total - 1);
     if (!outcome.done) queues[outcome.newPhase].push(item);
   }
   onComplete();
 }
 
 export async function renderLearningMode(container, { newItems }, { onComplete, onExit }) {
-  const area = renderModeShell(container, onExit);
+  const { area, setProgress } = renderModeShell(container, onExit);
+  // Découverte puis quiz : les deux passes couvrent la même liste, d'où un total doublé
+  // pour que la barre du haut progresse de bout en bout sans repartir à zéro.
+  const total = newItems.length * 2;
   for (let i = 0; i < newItems.length; i++) {
+    setProgress(i, total);
     await previewItem(area, newItems[i], { index: i, total: newItems.length });
   }
   for (let i = 0; i < newItems.length; i++) {
+    setProgress(newItems.length + i, total);
     await runQuestion(area, newItems[i], { index: i, total: newItems.length });
   }
   onComplete();
 }
 
 export async function renderReviewMode(container, { reviewItems }, { onComplete, onExit }) {
-  const area = renderModeShell(container, onExit);
+  const { area, setProgress } = renderModeShell(container, onExit);
   for (let i = 0; i < reviewItems.length; i++) {
+    setProgress(i, reviewItems.length);
     await runQuestion(area, reviewItems[i], { index: i, total: reviewItems.length });
   }
   onComplete();
 }
 
 export async function renderFailedWordsMode(container, { failedWords }, { onComplete, onExit }) {
-  const area = renderModeShell(container, onExit);
+  const { area, setProgress } = renderModeShell(container, onExit);
   for (let i = 0; i < failedWords.length; i++) {
+    setProgress(i, failedWords.length);
     await runQuestion(area, failedWords[i], {
       index: i, total: failedWords.length, forceRetry: true, options: { preserveSchedule: true },
     });

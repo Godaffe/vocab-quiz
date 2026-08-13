@@ -1,18 +1,39 @@
 // Reusable flashcard shell + swipe gesture helper for the review/learning screens.
 
+// Au-delà de ce seuil la colonne de points se tasse et devient illisible : la barre
+// de progression horizontale de la coque de session prend alors le relais.
+const MAX_DOTS = 15;
+
 export function renderFlashcard(area, { variant, badge, dotsTotal = 0, dotsFilled = 0 }) {
-  const dots = Array.from({ length: dotsTotal }, (_, i) => (
-    `<span class="dot${i < dotsFilled ? ' dot--filled' : ''}"></span>`
-  )).join('');
+  const showDots = dotsTotal > 0 && dotsTotal <= MAX_DOTS;
+  const dots = showDots
+    ? Array.from({ length: dotsTotal }, (_, i) => (
+      `<span class="dot${i < dotsFilled ? ' dot--filled' : ''}"></span>`
+    )).join('')
+    : '';
 
   area.innerHTML = `
-    <div class="flashcard flashcard--${variant}">
-      ${dotsTotal > 0 ? `<div class="dot-progress">${dots}</div>` : ''}
+    <div class="flashcard flashcard--fill flashcard--${variant}">
+      ${showDots ? `<div class="dot-progress">${dots}</div>` : ''}
       ${badge ? `<span class="flashcard-badge">${badge}</span>` : ''}
       <div class="flashcard-body"></div>
     </div>
   `;
   return area.querySelector('.flashcard-body');
+}
+
+// Attache un clic "n'importe où sur la carte", en ignorant ceux qui arrivent juste après
+// son affichage. Sans ce garde-fou, le clic tactile synthétisé par le navigateur après le
+// tap précédent retombe sur la carte fraîchement rendue et la valide toute seule — on
+// enchaînerait alors plusieurs cartes d'un seul tap.
+const GHOST_CLICK_MS = 400;
+
+export function onCardTap(card, handler) {
+  const renderedAt = Date.now();
+  card.addEventListener('click', (e) => {
+    if (Date.now() - renderedAt < GHOST_CLICK_MS) return;
+    handler(e);
+  });
 }
 
 // Basic pointer-based swipe detection. Buttons remain the reliable fallback for every
