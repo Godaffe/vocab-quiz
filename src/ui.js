@@ -284,8 +284,9 @@ export async function renderQuiz(container, session, { onComplete }) {
 
 function levelLabel(row) {
   if (row.learning_process === 'hard') return `Compliqué (Phase ${row.hard_phase})`;
-  if (row.total_reviews === 0) return 'Nouveau';
   if (row.is_learned) return 'Appris';
+  if (row.requeue_date) return `Reprogrammé (${row.requeue_date})`;
+  if (row.total_reviews === 0) return 'Nouveau';
   return String(row.box_level);
 }
 

@@ -1,4 +1,4 @@
-import { all, get, run, save } from './db.js';
+import { all, get, run, save, getSetting } from './db.js';
 
 export const LEVEL_INTERVAL_DAYS = { 1: 1, 2: 2, 3: 4, 4: 8 };
 
@@ -17,14 +17,28 @@ function addDays(isoDate, days) {
   return d.toISOString().slice(0, 10);
 }
 
+// Finds the earliest future day that still has room in the daily new-word budget, cascading
+// forward day by day when a day is already full of scheduled requeues (review failures and
+// "mots compliqués" graduates share this same daily cap).
+function scheduleRequeue(todayISO) {
+  const capacity = parseInt(getSetting('new_items_per_day') ?? '10', 10);
+  let date = addDays(todayISO, 1);
+  while (true) {
+    const row = get('SELECT COUNT(*) as c FROM progress WHERE requeue_date = ?', [date]);
+    if ((row?.c ?? 0) < capacity) return date;
+    date = addDays(date, 1);
+  }
+}
+
 export async function gradeAnswer(itemType, itemKey, isCorrect, todayISO) {
   const row = get('SELECT * FROM progress WHERE item_type = ? AND item_key = ?', [itemType, itemKey]);
   if (!row) throw new Error(`No progress row for ${itemType}/${itemKey}`);
 
-  // needs_preview items (just graduated from the "mots compliqués" process) are re-stamped as
-  // introduced today too, so they count against today's new-word budget like a real new item.
-  const introducedAt = (row.total_reviews === 0 || row.needs_preview) ? todayISO : row.introduced_at;
-  let boxLevel, isLearned, nextReviewDate, correctStreak;
+  // Items with a pending requeue (review failures, or "mots compliqués" graduates) are
+  // re-stamped as introduced today too, so they count against today's new-word budget like a
+  // real new item.
+  const introducedAt = (row.total_reviews === 0 || row.requeue_date) ? todayISO : row.introduced_at;
+  let boxLevel, isLearned, nextReviewDate, correctStreak, requeueDate;
 
   const consecutiveFailures = isCorrect ? 0 : row.consecutive_failures + 1;
   const enteringHard = !isCorrect && consecutiveFailures >= 3;
@@ -34,24 +48,35 @@ export async function gradeAnswer(itemType, itemKey, isCorrect, todayISO) {
     isLearned = 0;
     nextReviewDate = null;
     correctStreak = 0;
+    requeueDate = null;
   } else if (isCorrect) {
     const { level, learned } = nextLevelOnCorrect(row.box_level);
     boxLevel = level;
     isLearned = learned ? 1 : 0;
     nextReviewDate = learned ? null : addDays(todayISO, LEVEL_INTERVAL_DAYS[level]);
     correctStreak = row.correct_streak + 1;
+    requeueDate = null;
   } else {
     boxLevel = nextLevelOnIncorrect(row.box_level);
     isLearned = 0;
-    nextReviewDate = addDays(todayISO, LEVEL_INTERVAL_DAYS[boxLevel] ?? 0);
     correctStreak = 0;
+    if (row.total_reviews > 0) {
+      // Review-mode failure: leave today's review pool entirely, come back as a new item
+      // (preview + test) on the earliest future day that still has room in the daily budget.
+      nextReviewDate = null;
+      requeueDate = scheduleRequeue(todayISO);
+    } else {
+      // A truly brand-new item failing its very first attempt: unchanged, stays due today.
+      nextReviewDate = addDays(todayISO, LEVEL_INTERVAL_DAYS[boxLevel] ?? 0);
+      requeueDate = null;
+    }
   }
 
   run(
     `UPDATE progress SET
        box_level = ?, is_learned = ?, next_review_date = ?, introduced_at = ?,
        last_result = ?, last_reviewed_at = ?, correct_streak = ?, total_reviews = total_reviews + 1,
-       consecutive_failures = ?, needs_preview = 0,
+       consecutive_failures = ?, requeue_date = ?,
        learning_process = ?, hard_phase = ?, hard_failures_today = ?, hard_session_date = ?
      WHERE item_type = ? AND item_key = ?`,
     [
@@ -63,6 +88,7 @@ export async function gradeAnswer(itemType, itemKey, isCorrect, todayISO) {
       new Date().toISOString(),
       correctStreak,
       consecutiveFailures,
+      requeueDate,
       enteringHard ? 'hard' : 'normal',
       enteringHard ? 1 : row.hard_phase,
       enteringHard ? 0 : row.hard_failures_today,
@@ -78,14 +104,15 @@ export async function gradeAnswer(itemType, itemKey, isCorrect, todayISO) {
 // normal circuit at box_level 0, and reappears tomorrow like a brand-new item (previewed,
 // then tested, and counted against the day's new-word budget).
 export async function exitHardMode(itemType, itemKey, todayISO) {
+  const requeueDate = scheduleRequeue(todayISO);
   run(
     `UPDATE progress SET
        learning_process = 'normal', hard_phase = NULL, hard_failures_today = 0, hard_session_date = NULL,
-       needs_preview = 1, consecutive_failures = 2, box_level = 0, is_learned = 0,
-       next_review_date = ?, last_result = 'correct', last_reviewed_at = ?,
+       requeue_date = ?, consecutive_failures = 2, box_level = 0, is_learned = 0,
+       next_review_date = NULL, last_result = 'correct', last_reviewed_at = ?,
        correct_streak = correct_streak + 1, total_reviews = total_reviews + 1
      WHERE item_type = ? AND item_key = ?`,
-    [addDays(todayISO, 1), new Date().toISOString(), itemType, itemKey]
+    [requeueDate, new Date().toISOString(), itemType, itemKey]
   );
   await save();
 }
@@ -166,12 +193,14 @@ export function countNewIntroducedToday(todayISO) {
 
 export function getNewItemsPool(budget, todayISO) {
   if (budget <= 0) return [];
-  // Shuffled rather than sorted by type: sorting alphabetically would let "expressions"
-  // starve "vocabulaire"/"grammaire" out of the shared daily budget entirely. Includes both
-  // genuinely new items and items graduating back from "mots compliqués" (needs_preview).
-  return shuffle(all(unionAll(
-    `(total_reviews = 0 OR (needs_preview = 1 AND next_review_date <= '${todayISO}')) AND learning_process = 'normal'`
-  ))).slice(0, budget);
+  // Requeued items (review failures, "mots compliqués" graduates) always take priority over
+  // genuinely new items for the shared daily budget. Each tier is shuffled internally rather
+  // than sorted by type, so "expressions" can't starve "vocabulaire"/"grammaire" out of it.
+  const requeued = shuffle(all(unionAll(
+    `requeue_date IS NOT NULL AND requeue_date <= '${todayISO}' AND learning_process = 'normal'`
+  )));
+  const fresh = shuffle(all(unionAll("total_reviews = 0 AND learning_process = 'normal'")));
+  return [...requeued, ...fresh].slice(0, budget);
 }
 
 export function getLearnedSample(n) {

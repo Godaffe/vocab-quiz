@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS progress (
   hard_failures_today INTEGER NOT NULL DEFAULT 0,
   hard_session_date TEXT,
   needs_preview INTEGER NOT NULL DEFAULT 0,
+  requeue_date TEXT,
   PRIMARY KEY (item_type, item_key)
 );
 
@@ -80,6 +81,7 @@ const PROGRESS_COLUMN_MIGRATIONS = [
   'ALTER TABLE progress ADD COLUMN hard_failures_today INTEGER NOT NULL DEFAULT 0',
   'ALTER TABLE progress ADD COLUMN hard_session_date TEXT',
   'ALTER TABLE progress ADD COLUMN needs_preview INTEGER NOT NULL DEFAULT 0',
+  'ALTER TABLE progress ADD COLUMN requeue_date TEXT',
 ];
 
 function migrateProgressColumns() {
