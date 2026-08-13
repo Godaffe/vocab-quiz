@@ -30,7 +30,7 @@ function scheduleRequeue(todayISO) {
   }
 }
 
-export async function gradeAnswer(itemType, itemKey, isCorrect, todayISO) {
+export async function gradeAnswer(itemType, itemKey, isCorrect, todayISO, { preserveSchedule = false } = {}) {
   const row = get('SELECT * FROM progress WHERE item_type = ? AND item_key = ?', [itemType, itemKey]);
   if (!row) throw new Error(`No progress row for ${itemType}/${itemKey}`);
 
@@ -56,6 +56,13 @@ export async function gradeAnswer(itemType, itemKey, isCorrect, todayISO) {
     nextReviewDate = learned ? null : addDays(todayISO, LEVEL_INTERVAL_DAYS[level]);
     correctStreak = row.correct_streak + 1;
     requeueDate = null;
+  } else if (preserveSchedule) {
+    // Retry volontaire depuis "Réviser mes mots ratés" : reste au niveau 0, échéance inchangée.
+    boxLevel = row.box_level;
+    isLearned = 0;
+    correctStreak = 0;
+    nextReviewDate = row.next_review_date;
+    requeueDate = row.requeue_date;
   } else {
     boxLevel = nextLevelOnIncorrect(row.box_level);
     isLearned = 0;
@@ -239,6 +246,13 @@ function shuffle(arr) {
 
 export function getAllProgress() {
   return all(unionAll('1=1'));
+}
+
+// Words already attempted at least once and currently sitting at level 0 in the normal
+// circuit — excludes never-seen items (total_reviews = 0) and "mots compliqués" items
+// (learning_process = 'hard'), which have their own dedicated track.
+export function getFailedWordsPool() {
+  return all(unionAll("learning_process = 'normal' AND box_level = 0 AND total_reviews > 0 AND is_learned = 0"));
 }
 
 export async function buildDailySession(newItemsPerDay, todayISO) {

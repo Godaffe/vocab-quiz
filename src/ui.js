@@ -5,7 +5,7 @@ import {
 } from './quiz.js';
 import { getSetting, setSetting } from './db.js';
 import { exportToFile, importFromFile, daysSince } from './backup.js';
-import { getAllProgress, advancedPhase, demotedPhase } from './leitner.js';
+import { getAllProgress, advancedPhase, demotedPhase, getFailedWordsPool } from './leitner.js';
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
@@ -62,9 +62,10 @@ export function renderImport(container) {
   });
 }
 
-export async function renderHome(container, { onStartHard, onStartLearning, onStartReview }) {
+export async function renderHome(container, { onStartHard, onStartLearning, onStartReview, onStartFailedWords }) {
   container.innerHTML = '<h1>Vocab Quiz</h1><p>Chargement…</p>';
   const session = await startSession();
+  const failedWords = getFailedWordsPool();
   container.innerHTML = `
     <h1>Vocab Quiz</h1>
     <button id="start-hard-btn" ${session.hardItems.length === 0 ? 'disabled' : ''}>
@@ -76,6 +77,9 @@ export async function renderHome(container, { onStartHard, onStartLearning, onSt
     <button id="start-review-btn" ${session.reviewItems.length === 0 ? 'disabled' : ''}>
       Révision (${session.reviewItems.length})
     </button>
+    <button id="start-failed-btn" ${failedWords.length === 0 ? 'disabled' : ''}>
+      Réviser mes mots ratés (${failedWords.length})
+    </button>
   `;
   if (session.hardItems.length > 0) {
     container.querySelector('#start-hard-btn').addEventListener('click', () => onStartHard(session));
@@ -85,6 +89,9 @@ export async function renderHome(container, { onStartHard, onStartLearning, onSt
   }
   if (session.reviewItems.length > 0) {
     container.querySelector('#start-review-btn').addEventListener('click', () => onStartReview(session));
+  }
+  if (failedWords.length > 0) {
+    container.querySelector('#start-failed-btn').addEventListener('click', () => onStartFailedWords(failedWords));
   }
 }
 
@@ -165,7 +172,7 @@ async function askUntilCorrect(container, header, prompt, checkFn, correctionFie
   return first;
 }
 
-async function runVocabQuestion(container, item, header) {
+async function runVocabQuestion(container, item, header, options) {
   const baseCorrect = await askUntilCorrect(
     container, header, item.prompt,
     (answer) => checkBase(item, answer),
@@ -181,31 +188,31 @@ async function runVocabQuestion(container, item, header) {
     );
   }
 
-  await finalizeVocabItem(item, baseCorrect, conjugationCorrect);
+  await finalizeVocabItem(item, baseCorrect, conjugationCorrect, options);
 }
 
-async function runGrammaireQuestion(container, item, header) {
+async function runGrammaireQuestion(container, item, header, options) {
   const isCorrect = await askUntilCorrect(
     container, header, item.prompt,
     (answer) => checkAnswer(item, answer),
     { expected: item.en, rule: item.explication }
   );
-  await finalizeItem(item, isCorrect);
+  await finalizeItem(item, isCorrect, options);
 }
 
-async function runExpressionQuestion(container, item, header) {
+async function runExpressionQuestion(container, item, header, options) {
   const isCorrect = await askUntilCorrect(
     container, header, item.prompt,
     (answer) => checkAnswer(item, answer),
     { expected: item.en, example: item.example }
   );
-  await finalizeItem(item, isCorrect);
+  await finalizeItem(item, isCorrect, options);
 }
 
-async function runQuestion(container, item, header) {
-  if (item.item_type === 'vocabulaire') await runVocabQuestion(container, item, header);
-  else if (item.item_type === 'grammaire') await runGrammaireQuestion(container, item, header);
-  else if (item.item_type === 'expressions') await runExpressionQuestion(container, item, header);
+async function runQuestion(container, item, header, options) {
+  if (item.item_type === 'vocabulaire') await runVocabQuestion(container, item, header, options);
+  else if (item.item_type === 'grammaire') await runGrammaireQuestion(container, item, header, options);
+  else if (item.item_type === 'expressions') await runExpressionQuestion(container, item, header, options);
 }
 
 // "Mots compliqués" — Phase 1: En -> Fr/Meaning, no hint. Phase 2: Fr/Meaning -> En, hangman
@@ -303,6 +310,14 @@ export async function renderReviewMode(container, { reviewItems }, { onComplete,
   const area = renderModeShell(container, onExit);
   for (let i = 0; i < reviewItems.length; i++) {
     await runQuestion(area, reviewItems[i], `Révision — ${i + 1} / ${reviewItems.length}`);
+  }
+  onComplete();
+}
+
+export async function renderFailedWordsMode(container, { failedWords }, { onComplete, onExit }) {
+  const area = renderModeShell(container, onExit);
+  for (let i = 0; i < failedWords.length; i++) {
+    await runQuestion(area, failedWords[i], `Mots ratés — ${i + 1} / ${failedWords.length}`, { preserveSchedule: true });
   }
   onComplete();
 }

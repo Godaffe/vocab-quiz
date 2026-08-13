@@ -21,9 +21,9 @@ export function checkConjugation(item, answer) {
   return answersMatch(answer, expectedSlash) || answersMatch(answer, expectedSpace);
 }
 
-export async function finalizeVocabItem(item, baseCorrect, conjugationCorrect) {
+export async function finalizeVocabItem(item, baseCorrect, conjugationCorrect, options) {
   const isCorrect = baseCorrect && (conjugationCorrect ?? true);
-  await gradeAnswer('vocabulaire', item.item_key, isCorrect, todayISO());
+  await gradeAnswer('vocabulaire', item.item_key, isCorrect, todayISO(), options);
   return isCorrect;
 }
 
@@ -34,8 +34,8 @@ export function checkAnswer(item, answer) {
   return answersMatch(answer, item.en, { tolerant });
 }
 
-export async function finalizeItem(item, isCorrect) {
-  await gradeAnswer(item.item_type, item.item_key, isCorrect, todayISO());
+export async function finalizeItem(item, isCorrect, options) {
+  await gradeAnswer(item.item_type, item.item_key, isCorrect, todayISO(), options);
   return isCorrect;
 }
 

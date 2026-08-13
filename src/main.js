@@ -3,7 +3,7 @@ import { initDb } from './db.js';
 import { rotateInternalBackup } from './backup.js';
 import {
   renderImport, renderHome, renderHardMode, renderLearningMode, renderReviewMode,
-  renderSettings, renderProgress,
+  renderFailedWordsMode, renderSettings, renderProgress,
 } from './ui.js';
 
 if ('storage' in navigator && 'persist' in navigator.storage) {
@@ -26,6 +26,7 @@ function showHome() {
     onStartHard: (session) => renderHardMode(screen, { hardItems: session.hardItems }, { onComplete: showHome, onExit: showHome }),
     onStartLearning: (session) => renderLearningMode(screen, { newItems: session.newItems }, { onComplete: showHome, onExit: showHome }),
     onStartReview: (session) => renderReviewMode(screen, { reviewItems: session.reviewItems }, { onComplete: showHome, onExit: showHome }),
+    onStartFailedWords: (failedWords) => renderFailedWordsMode(screen, { failedWords }, { onComplete: showHome, onExit: showHome }),
   });
 }
 
