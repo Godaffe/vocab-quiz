@@ -3,7 +3,7 @@ import {
   startSession, checkBase, checkConjugation, finalizeVocabItem, checkAnswer, finalizeItem,
   checkReverse, gradeHardAttempt,
 } from './quiz.js';
-import { getSetting, setSetting } from './db.js';
+import { getSetting, setSetting, resetDatabase } from './db.js';
 import { exportToFile, importFromFile, daysSince } from './backup.js';
 import {
   getAllProgress, advancedPhase, demotedPhase, getFailedWordsPool,
@@ -506,6 +506,12 @@ export function renderSettings(container) {
     <p style="color:#F0997B">Attention : remplace entièrement le contenu et la progression actuels par ceux du fichier choisi.</p>
     <input type="file" id="restore-file" accept=".sqlite" />
     <p id="restore-status"></p>
+
+    <h2>Zone de débogage</h2>
+    <p style="color:#F0997B">Attention : efface définitivement tout le contenu et toute la
+    progression actuels, pour repartir d'une base vide (à réimporter ensuite).</p>
+    <button id="reset-db-btn">Réinitialiser la base de données</button>
+    <p id="reset-db-status"></p>
   `;
 
   const importFile = container.querySelector('#import-file');
@@ -564,6 +570,21 @@ export function renderSettings(container) {
       status.textContent = `Erreur : ${err.message}`;
     } finally {
       e.target.value = '';
+    }
+  });
+
+  container.querySelector('#reset-db-btn').addEventListener('click', async () => {
+    const status = container.querySelector('#reset-db-status');
+    if (!confirm('Ceci va effacer définitivement tout le contenu et toute la progression actuels. Continuer ?')) {
+      return;
+    }
+    status.textContent = 'Réinitialisation en cours…';
+    try {
+      await resetDatabase();
+      status.textContent = 'Base réinitialisée.';
+      renderSettings(container);
+    } catch (err) {
+      status.textContent = `Erreur : ${err.message}`;
     }
   });
 }

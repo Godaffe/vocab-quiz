@@ -120,6 +120,19 @@ export function getDb() {
   return db;
 }
 
+// Débogage : repart d'une base entièrement vide (contenu ET progression), pour pouvoir
+// retester le flux d'import/apprentissage à partir d'un état neuf.
+export async function resetDatabase() {
+  db = new SQL.Database();
+  db.exec(SCHEMA);
+  migrateProgressColumns();
+  for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
+    db.run('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', [key, value]);
+  }
+  await save();
+  return db;
+}
+
 // Full restore from a backup file: replaces the in-memory DB and the persisted
 // IndexedDB blob entirely (content + progress), unlike importFromWorkbook which merges.
 export async function restoreFromBytes(bytes) {
