@@ -119,6 +119,14 @@ input[type="text"] {
   overflow-x: auto;
 }
 
+.exit-btn {
+  background: transparent;
+  color: var(--color-muted);
+  font-size: 0.85rem;
+  padding: 4px 8px;
+  margin-bottom: 12px;
+}
+
 table {
   border-collapse: collapse;
   width: 100%;

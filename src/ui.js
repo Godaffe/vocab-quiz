@@ -62,18 +62,29 @@ export function renderImport(container) {
   });
 }
 
-export async function renderHome(container, { onStartSession }) {
+export async function renderHome(container, { onStartHard, onStartLearning, onStartReview }) {
   container.innerHTML = '<h1>Vocab Quiz</h1><p>Chargement…</p>';
   const session = await startSession();
-  const total = session.hardItems.length + session.newItems.length + session.reviewItems.length;
   container.innerHTML = `
     <h1>Vocab Quiz</h1>
-    <p>${session.hardItems.length} en mode compliqué, ${session.newItems.length} nouveau(x),
-    ${session.reviewItems.length} en révision aujourd'hui.</p>
-    <button id="start-session-btn" ${total === 0 ? 'disabled' : ''}>Commencer la session</button>
+    <button id="start-hard-btn" ${session.hardItems.length === 0 ? 'disabled' : ''}>
+      Mots compliqués (${session.hardItems.length})
+    </button>
+    <button id="start-learning-btn" ${session.newItems.length === 0 ? 'disabled' : ''}>
+      Apprentissage (${session.newItems.length})
+    </button>
+    <button id="start-review-btn" ${session.reviewItems.length === 0 ? 'disabled' : ''}>
+      Révision (${session.reviewItems.length})
+    </button>
   `;
-  if (total > 0) {
-    container.querySelector('#start-session-btn').addEventListener('click', () => onStartSession(session));
+  if (session.hardItems.length > 0) {
+    container.querySelector('#start-hard-btn').addEventListener('click', () => onStartHard(session));
+  }
+  if (session.newItems.length > 0) {
+    container.querySelector('#start-learning-btn').addEventListener('click', () => onStartLearning(session));
+  }
+  if (session.reviewItems.length > 0) {
+    container.querySelector('#start-review-btn').addEventListener('click', () => onStartReview(session));
   }
 }
 
@@ -260,25 +271,39 @@ async function runHardModeItem(container, item) {
   }
 }
 
-export async function renderQuiz(container, session, { onComplete }) {
-  const { hardItems, newItems, reviewItems } = session;
+function renderModeShell(container, onExit) {
+  container.innerHTML = `
+    <button id="exit-btn" class="exit-btn">Quitter</button>
+    <div id="question-area"></div>
+  `;
+  container.querySelector('#exit-btn').addEventListener('click', onExit);
+  return container.querySelector('#question-area');
+}
 
-  for (let i = 0; i < hardItems.length; i++) {
-    await runHardModeItem(container, hardItems[i]);
+export async function renderHardMode(container, { hardItems }, { onComplete, onExit }) {
+  const area = renderModeShell(container, onExit);
+  for (const item of hardItems) {
+    await runHardModeItem(area, item);
   }
+  onComplete();
+}
 
+export async function renderLearningMode(container, { newItems }, { onComplete, onExit }) {
+  const area = renderModeShell(container, onExit);
   for (let i = 0; i < newItems.length; i++) {
-    await previewItem(container, newItems[i], `Découverte — ${i + 1} / ${newItems.length}`);
+    await previewItem(area, newItems[i], `Découverte — ${i + 1} / ${newItems.length}`);
   }
-
   for (let i = 0; i < newItems.length; i++) {
-    await runQuestion(container, newItems[i], `Nouveaux mots — ${i + 1} / ${newItems.length}`);
+    await runQuestion(area, newItems[i], `Nouveaux mots — ${i + 1} / ${newItems.length}`);
   }
+  onComplete();
+}
 
+export async function renderReviewMode(container, { reviewItems }, { onComplete, onExit }) {
+  const area = renderModeShell(container, onExit);
   for (let i = 0; i < reviewItems.length; i++) {
-    await runQuestion(container, reviewItems[i], `Révision — ${i + 1} / ${reviewItems.length}`);
+    await runQuestion(area, reviewItems[i], `Révision — ${i + 1} / ${reviewItems.length}`);
   }
-
   onComplete();
 }
 

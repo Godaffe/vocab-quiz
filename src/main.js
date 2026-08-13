@@ -1,7 +1,10 @@
 import './style.css';
 import { initDb } from './db.js';
 import { rotateInternalBackup } from './backup.js';
-import { renderImport, renderHome, renderQuiz, renderSettings, renderProgress } from './ui.js';
+import {
+  renderImport, renderHome, renderHardMode, renderLearningMode, renderReviewMode,
+  renderSettings, renderProgress,
+} from './ui.js';
 
 if ('storage' in navigator && 'persist' in navigator.storage) {
   navigator.storage.persist();
@@ -19,7 +22,11 @@ const screen = document.createElement('div');
 screen.id = 'screen';
 
 function showHome() {
-  renderHome(screen, { onStartSession: showQuiz });
+  renderHome(screen, {
+    onStartHard: (session) => renderHardMode(screen, { hardItems: session.hardItems }, { onComplete: showHome, onExit: showHome }),
+    onStartLearning: (session) => renderLearningMode(screen, { newItems: session.newItems }, { onComplete: showHome, onExit: showHome }),
+    onStartReview: (session) => renderReviewMode(screen, { reviewItems: session.reviewItems }, { onComplete: showHome, onExit: showHome }),
+  });
 }
 
 function showImport() {
@@ -32,10 +39,6 @@ function showSettings() {
 
 function showProgress() {
   renderProgress(screen);
-}
-
-function showQuiz(session) {
-  renderQuiz(screen, session, { onComplete: showHome });
 }
 
 async function main() {
