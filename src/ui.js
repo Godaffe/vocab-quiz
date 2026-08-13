@@ -71,7 +71,7 @@ export async function renderHome(container, { onStartHard, onStartLearning, onSt
     </div>
     <button class="session-card" id="start-learning-btn" ${newRemaining === 0 ? 'disabled' : ''}>
       <div class="session-card-title">✨ Mots nouveaux</div>
-      <div class="session-card-count">${newRemaining} <small>/ ${dailyBudget} aujourd'hui</small></div>
+      <div class="session-card-count">${introducedToday} <small>/ ${dailyBudget} appris aujourd'hui</small></div>
       <div class="progress-bar"><div class="progress-bar-fill" style="width:${newPct}%"></div></div>
     </button>
     <button class="session-card" id="start-review-btn" ${reviewRemaining === 0 ? 'disabled' : ''}>
@@ -261,17 +261,16 @@ async function runQuestion(container, item, ctx) {
 
 // "Mots compliqués" — Phase 1: En -> Fr/Meaning, no hint. Phase 2: Fr/Meaning -> En, hangman
 // hint. Phase 3: Fr/Meaning -> En, no hint (same question as the normal circuit).
-// Each letter (including the two revealed ones) is space-separated so the blanks stay
-// individually countable instead of merging into one solid underscore run.
+// No literal space characters between letters (that reads as a word break) — the letters
+// stay countable via CSS letter-spacing on .flashcard-hint instead, so the only real space
+// characters in the string are genuine word boundaries.
 function maskWord(word) {
-  if (word.length <= 2) return word.split('').join(' ');
-  const middle = '_'.repeat(word.length - 2).split('').join(' ');
-  return `${word[0]} ${middle} ${word[word.length - 1]}`;
+  if (word.length <= 2) return word;
+  return word[0] + '_'.repeat(word.length - 2) + word[word.length - 1];
 }
 
 // Vocabulaire masks each word of the base translation individually; Grammaire/Expressions
-// mask the whole answer as a single block. Word boundaries use a wider gap than the
-// per-letter spacing so they stay visually distinct from the letter blanks.
+// mask the whole answer as a single block.
 function maskHint(itemType, text) {
   if (itemType === 'vocabulaire') {
     return text.split(' ').map(maskWord).join('   ');
@@ -351,9 +350,12 @@ function renderModeShell(container, onExit) {
 
   const fill = container.querySelector('#mode-progress');
   const counter = container.querySelector('#mode-counter');
-  const setProgress = (index, total) => {
+  // variant 'discover' (orange) pour la phase de lecture des nouveaux mots, 'quiz' (vert,
+  // par défaut) pour la phase question/réponse — utilisé aussi tel quel par les autres modes.
+  const setProgress = (index, total, variant = 'quiz') => {
     counter.textContent = total > 0 ? `${index + 1} / ${total}` : '';
     fill.style.width = total > 0 ? `${Math.round((index / total) * 100)}%` : '0%';
+    fill.classList.toggle('progress-bar-fill--discover', variant === 'discover');
   };
 
   return { area: container.querySelector('#question-area'), setProgress };
@@ -385,15 +387,14 @@ export async function renderHardMode(container, { hardItems }, { onComplete, onE
 
 export async function renderLearningMode(container, { newItems }, { onComplete, onExit }) {
   const { area, setProgress } = renderModeShell(container, onExit);
-  // Découverte puis quiz : les deux passes couvrent la même liste, d'où un total doublé
-  // pour que la barre du haut progresse de bout en bout sans repartir à zéro.
-  const total = newItems.length * 2;
+  // Deux barres de progression distinctes, chacune repartant de 0 : orange pour la lecture
+  // des nouveaux mots, verte pour la phase question/réponse qui suit.
   for (let i = 0; i < newItems.length; i++) {
-    setProgress(i, total);
+    setProgress(i, newItems.length, 'discover');
     await previewItem(area, newItems[i], { index: i, total: newItems.length });
   }
   for (let i = 0; i < newItems.length; i++) {
-    setProgress(newItems.length + i, total);
+    setProgress(i, newItems.length, 'quiz');
     await runQuestion(area, newItems[i], { index: i, total: newItems.length });
   }
   onComplete();

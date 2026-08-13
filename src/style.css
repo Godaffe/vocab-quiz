@@ -307,6 +307,12 @@ th, td {
   height: 100%;
   background: var(--color-accent-fr);
   border-radius: 4px;
+  transition: background-color 0.15s ease;
+}
+
+/* Phase de lecture des nouveaux mots (avant le quiz) : orange plutôt que vert. */
+.progress-bar-fill--discover {
+  background: var(--color-streak);
 }
 
 .compact-row {
@@ -442,8 +448,10 @@ th, td {
 
 .flashcard-hint {
   font-family: 'Courier New', monospace;
-  letter-spacing: 3px;
-  font-size: 1.1rem;
+  font-weight: 700;
+  font-size: 1.4rem;
+  letter-spacing: 6px;
+  color: var(--color-text);
 }
 
 .flashcard-body {
