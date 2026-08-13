@@ -5,7 +5,11 @@ import {
 } from './quiz.js';
 import { getSetting, setSetting } from './db.js';
 import { exportToFile, importFromFile, daysSince } from './backup.js';
-import { getAllProgress, advancedPhase, demotedPhase, getFailedWordsPool } from './leitner.js';
+import {
+  getAllProgress, advancedPhase, demotedPhase, getFailedWordsPool,
+  getStreak, getLearnedCount, getInProgressCount, countNewIntroducedToday,
+} from './leitner.js';
+import { renderFlashcard, onSwipe } from './card.js';
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
@@ -22,72 +26,77 @@ function summaryRowHtml(label, s) {
     return `<p><strong>${label}</strong> : feuille introuvable dans le fichier.</p>`;
   }
   const dup = s.duplicateId.length
-    ? ` — <span style="color:#dc2626">ID en double ignorés : ${s.duplicateId.join(', ')}</span>`
+    ? ` — <span style="color:#F0997B">ID en double ignorés : ${s.duplicateId.join(', ')}</span>`
     : '';
   return `<p><strong>${label}</strong> : ${s.new} nouveau(x), ${s.updated} mis à jour, ${s.unchanged} inchangé(s), ${s.skipped} ligne(s) ignorée(s) (ID/colonnes manquants)${dup}</p>`;
 }
 
-export function renderImport(container) {
-  container.innerHTML = `
-    <h1>Importer le vocabulaire</h1>
-    <p>Sélectionne ton fichier Excel (.xlsx). Réimporter est sans risque : le contenu est mis à
-    jour mais ta progression de révision n'est jamais effacée.</p>
-    <input type="file" id="import-file" accept=".xlsx" />
-    <div id="import-summary"></div>
-  `;
+const WEEKDAYS = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
+const MONTHS = [
+  'janvier', 'février', 'mars', 'avril', 'mai', 'juin',
+  'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre',
+];
 
-  const fileInput = container.querySelector('#import-file');
-  const summaryEl = container.querySelector('#import-summary');
-
-  fileInput.addEventListener('change', async () => {
-    const file = fileInput.files[0];
-    if (!file) return;
-
-    summaryEl.innerHTML = '<p>Import en cours…</p>';
-    try {
-      const buffer = await file.arrayBuffer();
-      const workbook = parseWorkbookFile(buffer);
-      const summary = await importFromWorkbook(workbook, todayISO());
-
-      summaryEl.innerHTML = [
-        summaryRowHtml('Vocabulaire', summary.vocabulaire),
-        summaryRowHtml('Grammaire', summary.grammaire),
-        summaryRowHtml('Expressions', summary.expressions),
-      ].join('');
-    } catch (err) {
-      summaryEl.innerHTML = `<p style="color:#dc2626">Erreur lors de l'import : ${err.message}</p>`;
-    } finally {
-      fileInput.value = '';
-    }
-  });
+function formatDayFr(date) {
+  return `${WEEKDAYS[date.getDay()]} ${date.getDate()} ${MONTHS[date.getMonth()]}`;
 }
 
 export async function renderHome(container, { onStartHard, onStartLearning, onStartReview, onStartFailedWords }) {
-  container.innerHTML = '<h1>Vocab Quiz</h1><p>Chargement…</p>';
+  container.innerHTML = '<p>Chargement…</p>';
   const session = await startSession();
   const failedWords = getFailedWordsPool();
+  const streak = getStreak();
+  const learnedCount = getLearnedCount();
+  const inProgressCount = getInProgressCount();
+  const dailyBudget = parseInt(getSetting('new_items_per_day') ?? '10', 10);
+  const introducedToday = countNewIntroducedToday(todayISO());
+  const newRemaining = session.newItems.length;
+  const newPct = dailyBudget > 0 ? Math.min(100, Math.round((introducedToday / dailyBudget) * 100)) : 0;
+  const reviewRemaining = session.reviewItems.length;
+
   container.innerHTML = `
-    <h1>Vocab Quiz</h1>
-    <button id="start-hard-btn" ${session.hardItems.length === 0 ? 'disabled' : ''}>
-      Mots compliqués (${session.hardItems.length})
+    <div class="home-header">
+      <span class="today">${escapeHtml(formatDayFr(new Date()))}</span>
+      <span class="streak-badge">🔥 ${streak}</span>
+    </div>
+    <div class="stat-row">
+      <div class="stat-chip">
+        <div class="stat-value">${learnedCount}</div>
+        <div class="stat-label">mots appris</div>
+      </div>
+      <div class="stat-chip">
+        <div class="stat-value">${inProgressCount}</div>
+        <div class="stat-label">en cours d'apprentissage</div>
+      </div>
+    </div>
+    <button class="session-card" id="start-learning-btn" ${newRemaining === 0 ? 'disabled' : ''}>
+      <div class="session-card-title">Mots nouveaux</div>
+      <div class="session-card-count">${newRemaining} / ${dailyBudget}</div>
+      <div class="progress-bar"><div class="progress-bar-fill" style="width:${newPct}%"></div></div>
     </button>
-    <button id="start-learning-btn" ${session.newItems.length === 0 ? 'disabled' : ''}>
-      Apprentissage (${session.newItems.length})
+    <button class="session-card" id="start-review-btn" ${reviewRemaining === 0 ? 'disabled' : ''}>
+      <div class="session-card-title">Révision</div>
+      <div class="session-card-count">${reviewRemaining} mot(s) à réviser</div>
+      <div class="progress-bar"><div class="progress-bar-fill" style="width:0%"></div></div>
     </button>
-    <button id="start-review-btn" ${session.reviewItems.length === 0 ? 'disabled' : ''}>
-      Révision (${session.reviewItems.length})
-    </button>
-    <button id="start-failed-btn" ${failedWords.length === 0 ? 'disabled' : ''}>
-      Réviser mes mots ratés (${failedWords.length})
-    </button>
+    <div class="compact-row">
+      <button class="compact-card" id="start-hard-btn" ${session.hardItems.length === 0 ? 'disabled' : ''}>
+        <div class="compact-card-value">${session.hardItems.length}</div>
+        <div class="compact-card-label">Mots compliqués</div>
+      </button>
+      <button class="compact-card" id="start-failed-btn" ${failedWords.length === 0 ? 'disabled' : ''}>
+        <div class="compact-card-value">${failedWords.length}</div>
+        <div class="compact-card-label">Réviser mes mots ratés</div>
+      </button>
+    </div>
   `;
   if (session.hardItems.length > 0) {
     container.querySelector('#start-hard-btn').addEventListener('click', () => onStartHard(session));
   }
-  if (session.newItems.length > 0) {
+  if (newRemaining > 0) {
     container.querySelector('#start-learning-btn').addEventListener('click', () => onStartLearning(session));
   }
-  if (session.reviewItems.length > 0) {
+  if (reviewRemaining > 0) {
     container.querySelector('#start-review-btn').addEventListener('click', () => onStartReview(session));
   }
   if (failedWords.length > 0) {
@@ -95,18 +104,20 @@ export async function renderHome(container, { onStartHard, onStartLearning, onSt
   }
 }
 
-function askInput(container, { header, prompt, hint }) {
+// --- Flashcard screens -----------------------------------------------------
+
+function questionCard(area, { prompt, hint, badge, variant = 'question', index, total }) {
   return new Promise((resolve) => {
-    container.innerHTML = `
-      <p class="progress-header">${escapeHtml(header)}</p>
+    const body = renderFlashcard(area, { variant, badge, dotsTotal: total, dotsFilled: index });
+    body.innerHTML = `
       <p class="prompt">${escapeHtml(prompt)}</p>
       ${hint ? `<p><em>${escapeHtml(hint)}</em></p>` : ''}
       <input type="text" id="answer-input" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
       <button id="submit-btn">Valider</button>
     `;
-    const input = container.querySelector('#answer-input');
+    const input = body.querySelector('#answer-input');
     const submit = () => resolve(input.value);
-    container.querySelector('#submit-btn').addEventListener('click', submit);
+    body.querySelector('#submit-btn').addEventListener('click', submit);
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') submit();
     });
@@ -114,105 +125,130 @@ function askInput(container, { header, prompt, hint }) {
   });
 }
 
-function showCorrection(container, { header, isCorrect, expected, tag, example, rule }) {
+function retryCard(area, opts) {
+  return questionCard(area, { ...opts, variant: 'retry', badge: opts.badge ?? 'À retenter' });
+}
+
+function resultCard(area, { isCorrect, prompt, expected, tag, example, rule, badge, index, total }) {
   return new Promise((resolve) => {
-    container.innerHTML = `
-      <p class="progress-header">${escapeHtml(header)}</p>
-      <p style="color:${isCorrect ? '#16a34a' : '#dc2626'}"><strong>${isCorrect ? 'Correct !' : 'Incorrect'}</strong></p>
-      <p>Réponse attendue : <strong>${escapeHtml(expected)}</strong></p>
-      ${tag ? `<p><em>${escapeHtml(tag)}</em></p>` : ''}
-      ${example ? `<p>Exemple : ${escapeHtml(example)}</p>` : ''}
-      ${rule ? `<p>Règle : ${escapeHtml(rule)}</p>` : ''}
+    const body = renderFlashcard(area, {
+      variant: isCorrect ? 'correct' : 'incorrect',
+      badge: badge ?? (tag ? escapeHtml(tag) : null),
+      dotsTotal: total,
+      dotsFilled: index,
+    });
+    body.innerHTML = `
+      <div class="flashcard-result-icon">${isCorrect ? '✓' : '✗'}</div>
+      <div class="flashcard-word">${escapeHtml(expected)}</div>
+      ${prompt ? `<div class="answer-block answer-block--fr">${escapeHtml(prompt)}</div>` : ''}
+      ${(example || rule) ? `<div class="answer-block answer-block--example">${escapeHtml(example || rule)}</div>` : ''}
       <button id="next-btn">${isCorrect ? 'Suivant' : 'Réessayer'}</button>
     `;
-    container.querySelector('#next-btn').addEventListener('click', () => resolve());
+    body.querySelector('#next-btn').addEventListener('click', () => resolve());
   });
 }
 
-function showPreview(container, { header, prompt, answer, tag, example, rule }) {
+function discoverCard(area, { prompt, answer, tag, example, index, total }) {
   return new Promise((resolve) => {
-    container.innerHTML = `
-      <p class="progress-header">${escapeHtml(header)}</p>
-      <p class="prompt">${escapeHtml(prompt)}</p>
-      <p>Réponse : <strong>${escapeHtml(answer)}</strong></p>
-      ${tag ? `<p><em>${escapeHtml(tag)}</em></p>` : ''}
-      ${example ? `<p>Exemple : ${escapeHtml(example)}</p>` : ''}
-      ${rule ? `<p>Règle : ${escapeHtml(rule)}</p>` : ''}
-      <button id="next-btn">Suivant</button>
-    `;
-    container.querySelector('#next-btn').addEventListener('click', () => resolve());
+    let flipped = false;
+    function render() {
+      const body = renderFlashcard(area, { variant: 'discover', badge: 'Nouveau', dotsTotal: total, dotsFilled: index });
+      body.innerHTML = flipped ? `
+        <div class="flashcard-word">${escapeHtml(answer)}</div>
+        ${tag ? `<p><em>${escapeHtml(tag)}</em></p>` : ''}
+        ${example ? `<div class="answer-block answer-block--example">${escapeHtml(example)}</div>` : ''}
+        <button id="next-btn">Suivant</button>
+      ` : `
+        <div class="flashcard-word">${escapeHtml(prompt)}</div>
+        <p>Glisse pour voir la traduction</p>
+      `;
+      const card = area.querySelector('.flashcard');
+      onSwipe(card, {
+        onLeft: () => { flipped = !flipped; render(); },
+        onRight: () => { flipped = !flipped; render(); },
+        onUp: () => resolve(),
+      });
+      const nextBtn = body.querySelector('#next-btn');
+      if (nextBtn) nextBtn.addEventListener('click', () => resolve());
+    }
+    render();
   });
 }
 
-async function previewItem(container, item, header) {
+async function previewItem(container, item, { index, total }) {
   if (item.item_type === 'vocabulaire') {
     const answer = item.en_past_simple
       ? `${item.en_base} (${item.en_past_simple} / ${item.en_past_participle})`
       : item.en_base;
-    await showPreview(container, { header, prompt: item.prompt, answer, tag: item.type, example: item.example });
+    await discoverCard(container, { prompt: item.prompt, answer, tag: item.type, example: item.example, index, total });
   } else if (item.item_type === 'grammaire') {
-    await showPreview(container, { header, prompt: item.prompt, answer: item.en, rule: item.explication });
+    await discoverCard(container, { prompt: item.prompt, answer: item.en, example: item.explication, index, total });
   } else if (item.item_type === 'expressions') {
-    await showPreview(container, { header, prompt: item.prompt, answer: item.en, example: item.example });
+    await discoverCard(container, { prompt: item.prompt, answer: item.en, example: item.example, index, total });
   }
 }
 
 // Redemande la même question jusqu'à une bonne réponse. Seule la première tentative
 // (retournée ici) compte pour la note Leitner — les redemandes suivantes ne sont qu'un
-// entraînement affiché à l'écran.
-async function askUntilCorrect(container, header, prompt, checkFn, correctionFields) {
+// entraînement affiché à l'écran, sous la forme d'une carte "à retenter".
+async function askUntilCorrect(container, { prompt, badge, index, total, forceRetry, checkFn, correctionFields }) {
   let first = null;
+  let attempt = 0;
   while (true) {
-    const answer = await askInput(container, { header, prompt });
+    const useRetry = forceRetry || attempt > 0;
+    const answer = useRetry
+      ? await retryCard(container, { prompt, index, total })
+      : await questionCard(container, { prompt, badge, index, total });
     const isCorrect = checkFn(answer);
     if (first === null) first = isCorrect;
-    await showCorrection(container, { header, isCorrect, ...correctionFields });
+    await resultCard(container, { isCorrect, prompt, index, total, ...correctionFields });
     if (isCorrect) break;
+    attempt += 1;
   }
   return first;
 }
 
-async function runVocabQuestion(container, item, header, options) {
-  const baseCorrect = await askUntilCorrect(
-    container, header, item.prompt,
-    (answer) => checkBase(item, answer),
-    { expected: item.en_base, tag: item.type, example: item.example }
-  );
+async function runVocabQuestion(container, item, { index, total, badge, options, forceRetry }) {
+  const baseCorrect = await askUntilCorrect(container, {
+    prompt: item.prompt, badge, index, total, forceRetry,
+    checkFn: (answer) => checkBase(item, answer),
+    correctionFields: { expected: item.en_base, tag: item.type, example: item.example },
+  });
 
   let conjugationCorrect = true;
   if (item.en_past_simple) {
-    conjugationCorrect = await askUntilCorrect(
-      container, header, `Conjugaison de "${item.en_base}" — passé simple / participe passé ?`,
-      (answer) => checkConjugation(item, answer),
-      { expected: `${item.en_past_simple} / ${item.en_past_participle}` }
-    );
+    conjugationCorrect = await askUntilCorrect(container, {
+      prompt: `Conjugaison de "${item.en_base}" — passé simple / participe passé ?`, badge, index, total, forceRetry,
+      checkFn: (answer) => checkConjugation(item, answer),
+      correctionFields: { expected: `${item.en_past_simple} / ${item.en_past_participle}` },
+    });
   }
 
   await finalizeVocabItem(item, baseCorrect, conjugationCorrect, options);
 }
 
-async function runGrammaireQuestion(container, item, header, options) {
-  const isCorrect = await askUntilCorrect(
-    container, header, item.prompt,
-    (answer) => checkAnswer(item, answer),
-    { expected: item.en, rule: item.explication }
-  );
+async function runGrammaireQuestion(container, item, { index, total, badge, options, forceRetry }) {
+  const isCorrect = await askUntilCorrect(container, {
+    prompt: item.prompt, badge, index, total, forceRetry,
+    checkFn: (answer) => checkAnswer(item, answer),
+    correctionFields: { expected: item.en, rule: item.explication },
+  });
   await finalizeItem(item, isCorrect, options);
 }
 
-async function runExpressionQuestion(container, item, header, options) {
-  const isCorrect = await askUntilCorrect(
-    container, header, item.prompt,
-    (answer) => checkAnswer(item, answer),
-    { expected: item.en, example: item.example }
-  );
+async function runExpressionQuestion(container, item, { index, total, badge, options, forceRetry }) {
+  const isCorrect = await askUntilCorrect(container, {
+    prompt: item.prompt, badge, index, total, forceRetry,
+    checkFn: (answer) => checkAnswer(item, answer),
+    correctionFields: { expected: item.en, example: item.example },
+  });
   await finalizeItem(item, isCorrect, options);
 }
 
-async function runQuestion(container, item, header, options) {
-  if (item.item_type === 'vocabulaire') await runVocabQuestion(container, item, header, options);
-  else if (item.item_type === 'grammaire') await runGrammaireQuestion(container, item, header, options);
-  else if (item.item_type === 'expressions') await runExpressionQuestion(container, item, header, options);
+async function runQuestion(container, item, ctx) {
+  if (item.item_type === 'vocabulaire') await runVocabQuestion(container, item, ctx);
+  else if (item.item_type === 'grammaire') await runGrammaireQuestion(container, item, ctx);
+  else if (item.item_type === 'expressions') await runExpressionQuestion(container, item, ctx);
 }
 
 // "Mots compliqués" — Phase 1: En -> Fr/Meaning, no hint. Phase 2: Fr/Meaning -> En, hangman
@@ -250,13 +286,13 @@ async function runHardModeItem(container, item) {
   let phase = item.hard_phase;
   while (true) {
     const { prompt, expected, hint, checkFn } = hardModeQuestion(item, phase);
-    const header = `Mots compliqués — ${item.prompt}`;
-    const answer = await askInput(container, { header, prompt, hint });
+    const badge = `Mots compliqués — Phase ${phase}`;
+    const answer = await questionCard(container, { prompt, hint, badge, index: phase, total: 3 });
     const isCorrect = checkFn(answer);
 
     if (isCorrect && phase === 3) {
       await gradeHardAttempt(item, phase, true);
-      await showPreview(container, { header, prompt, answer: expected, tag: 'Sorti du mode compliqué !' });
+      await resultCard(container, { isCorrect: true, prompt, expected, index: 3, total: 3, badge: 'Sorti du mode compliqué !' });
       return;
     }
 
@@ -267,10 +303,10 @@ async function runHardModeItem(container, item) {
       continue;
     }
 
-    await showPreview(container, { header, prompt, answer: expected });
+    await resultCard(container, { isCorrect: false, prompt, expected, index: phase, total: 3 });
     if (result.cappedToday) {
-      await showPreview(container, {
-        header, prompt: "Trop d'erreurs sur cet item aujourd'hui", answer: 'On retente demain.',
+      await resultCard(container, {
+        isCorrect: false, prompt: "Trop d'erreurs sur cet item aujourd'hui", expected: 'On retente demain.', index: phase, total: 3,
       });
       return;
     }
@@ -298,10 +334,10 @@ export async function renderHardMode(container, { hardItems }, { onComplete, onE
 export async function renderLearningMode(container, { newItems }, { onComplete, onExit }) {
   const area = renderModeShell(container, onExit);
   for (let i = 0; i < newItems.length; i++) {
-    await previewItem(area, newItems[i], `Découverte — ${i + 1} / ${newItems.length}`);
+    await previewItem(area, newItems[i], { index: i, total: newItems.length });
   }
   for (let i = 0; i < newItems.length; i++) {
-    await runQuestion(area, newItems[i], `Nouveaux mots — ${i + 1} / ${newItems.length}`);
+    await runQuestion(area, newItems[i], { index: i, total: newItems.length });
   }
   onComplete();
 }
@@ -309,7 +345,7 @@ export async function renderLearningMode(container, { newItems }, { onComplete, 
 export async function renderReviewMode(container, { reviewItems }, { onComplete, onExit }) {
   const area = renderModeShell(container, onExit);
   for (let i = 0; i < reviewItems.length; i++) {
-    await runQuestion(area, reviewItems[i], `Révision — ${i + 1} / ${reviewItems.length}`);
+    await runQuestion(area, reviewItems[i], { index: i, total: reviewItems.length });
   }
   onComplete();
 }
@@ -317,7 +353,9 @@ export async function renderReviewMode(container, { reviewItems }, { onComplete,
 export async function renderFailedWordsMode(container, { failedWords }, { onComplete, onExit }) {
   const area = renderModeShell(container, onExit);
   for (let i = 0; i < failedWords.length; i++) {
-    await runQuestion(area, failedWords[i], `Mots ratés — ${i + 1} / ${failedWords.length}`, { preserveSchedule: true });
+    await runQuestion(area, failedWords[i], {
+      index: i, total: failedWords.length, forceRetry: true, options: { preserveSchedule: true },
+    });
   }
   onComplete();
 }
@@ -380,6 +418,12 @@ export function renderSettings(container) {
   container.innerHTML = `
     <h1>Réglages</h1>
 
+    <h2>Importer le vocabulaire</h2>
+    <p>Sélectionne ton fichier Excel (.xlsx). Réimporter est sans risque : le contenu est mis à
+    jour mais ta progression de révision n'est jamais effacée.</p>
+    <input type="file" id="import-file" accept=".xlsx" />
+    <div id="import-summary"></div>
+
     <h2>Nouveaux items par jour</h2>
     <p>Nombre maximum de nouveaux mots/règles/expressions introduits chaque jour, tous types confondus.</p>
     <input type="number" id="n-input" min="1" step="1" value="${escapeHtml(n)}" />
@@ -393,10 +437,34 @@ export function renderSettings(container) {
     <button id="export-btn">Exporter une sauvegarde</button>
 
     <h3>Restaurer une sauvegarde</h3>
-    <p style="color:#dc2626">Attention : remplace entièrement le contenu et la progression actuels par ceux du fichier choisi.</p>
+    <p style="color:#F0997B">Attention : remplace entièrement le contenu et la progression actuels par ceux du fichier choisi.</p>
     <input type="file" id="restore-file" accept=".sqlite" />
     <p id="restore-status"></p>
   `;
+
+  const importFile = container.querySelector('#import-file');
+  const importSummary = container.querySelector('#import-summary');
+  importFile.addEventListener('change', async () => {
+    const file = importFile.files[0];
+    if (!file) return;
+
+    importSummary.innerHTML = '<p>Import en cours…</p>';
+    try {
+      const buffer = await file.arrayBuffer();
+      const workbook = parseWorkbookFile(buffer);
+      const summary = await importFromWorkbook(workbook, todayISO());
+
+      importSummary.innerHTML = [
+        summaryRowHtml('Vocabulaire', summary.vocabulaire),
+        summaryRowHtml('Grammaire', summary.grammaire),
+        summaryRowHtml('Expressions', summary.expressions),
+      ].join('');
+    } catch (err) {
+      importSummary.innerHTML = `<p style="color:#F0997B">Erreur lors de l'import : ${err.message}</p>`;
+    } finally {
+      importFile.value = '';
+    }
+  });
 
   container.querySelector('#n-save-btn').addEventListener('click', async () => {
     const value = parseInt(container.querySelector('#n-input').value, 10);

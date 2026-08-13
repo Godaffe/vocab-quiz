@@ -17,6 +17,27 @@ function addDays(isoDate, days) {
   return d.toISOString().slice(0, 10);
 }
 
+// Tracks the "streak" of consecutive days with at least one graded answer, via the settings
+// table. Called once per calling function invocation; a no-op once today has already been
+// counted (checked via last_active_date) so it's safe to call on every grade/hard attempt.
+function bumpStreak(todayISO) {
+  const last = getSetting('last_active_date');
+  if (last === todayISO) return;
+  const streak = last === addDays(todayISO, -1) ? parseInt(getSetting('streak_count') ?? '0', 10) + 1 : 1;
+  run(
+    "INSERT INTO settings (key, value) VALUES ('last_active_date', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    [todayISO]
+  );
+  run(
+    "INSERT INTO settings (key, value) VALUES ('streak_count', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    [String(streak)]
+  );
+}
+
+export function getStreak() {
+  return parseInt(getSetting('streak_count') ?? '0', 10);
+}
+
 // Finds the earliest future day that still has room in the daily new-word budget, cascading
 // forward day by day when a day is already full of scheduled requeues (review failures and
 // "mots compliqués" graduates share this same daily cap).
@@ -104,6 +125,7 @@ export async function gradeAnswer(itemType, itemKey, isCorrect, todayISO, { pres
       itemKey,
     ]
   );
+  bumpStreak(todayISO);
   await save();
 }
 
@@ -121,6 +143,7 @@ export async function exitHardMode(itemType, itemKey, todayISO) {
      WHERE item_type = ? AND item_key = ?`,
     [requeueDate, new Date().toISOString(), itemType, itemKey]
   );
+  bumpStreak(todayISO);
   await save();
 }
 
@@ -149,6 +172,7 @@ export async function recordHardAttempt(itemType, itemKey, isCorrect, currentPha
      WHERE item_type = ? AND item_key = ?`,
     [new Date().toISOString(), isCorrect ? 'correct' : 'incorrect', hardPhase, hardFailuresToday, itemType, itemKey]
   );
+  bumpStreak(todayISO);
   await save();
 
   return { hardFailuresToday, cappedToday };
@@ -246,6 +270,14 @@ function shuffle(arr) {
 
 export function getAllProgress() {
   return all(unionAll('1=1'));
+}
+
+export function getLearnedCount() {
+  return get(`SELECT COUNT(*) as c FROM (${unionAll('is_learned = 1')})`).c;
+}
+
+export function getInProgressCount() {
+  return get(`SELECT COUNT(*) as c FROM (${unionAll('total_reviews > 0 AND is_learned = 0')})`).c;
 }
 
 // Words already attempted at least once and currently sitting at level 0 in the normal
