@@ -135,17 +135,23 @@ function retryCard(area, opts) {
 
 function resultCard(area, { isCorrect, prompt, expected, tag, example, rule, badge, index, total }) {
   return new Promise((resolve) => {
+    // Le type de mot n'est plus le badge du haut de la carte : il devient un bloc plein
+    // juste sous le mot anglais (voir .word-type). Le badge du haut reste réservé aux
+    // messages explicites (ex. sortie du mode compliqué).
     const body = renderFlashcard(area, {
       variant: isCorrect ? 'correct' : 'incorrect',
-      badge: badge ?? (tag ? escapeHtml(tag) : null),
+      badge,
       dotsTotal: total,
       dotsFilled: index,
     });
     body.innerHTML = `
-      <div class="flashcard-result-icon">${isCorrect ? '✓' : '✗'}</div>
+      <span class="result-icon-badge">${isCorrect ? '✓' : '✗'}</span>
       <div class="flashcard-word">${escapeHtml(expected)}</div>
-      ${prompt ? `<div class="answer-block answer-block--fr">${escapeHtml(prompt)}</div>` : ''}
-      ${(example || rule) ? `<div class="answer-block answer-block--example">${escapeHtml(example || rule)}</div>` : ''}
+      ${tag ? `<span class="word-type">${escapeHtml(tag)}</span>` : ''}
+      <div class="answer-stack">
+        ${prompt ? `<div class="answer-block answer-block--fr">${escapeHtml(prompt)}</div>` : ''}
+        ${(example || rule) ? `<div class="answer-block answer-block--example">${escapeHtml(example || rule)}</div>` : ''}
+      </div>
       <button id="next-btn" class="btn-primary">${isCorrect ? 'Suivant' : 'Réessayer'}</button>
     `;
     // Un clic n'importe où sur la carte suffit à continuer : plus besoin de viser le bouton.
@@ -160,8 +166,8 @@ function discoverCard(area, { prompt, answer, tag, example, index, total }) {
       const body = renderFlashcard(area, { variant: 'discover', badge: 'Nouveau', dotsTotal: total, dotsFilled: index });
       body.innerHTML = flipped ? `
         <div class="flashcard-word">${escapeHtml(answer)}</div>
-        ${tag ? `<p><em>${escapeHtml(tag)}</em></p>` : ''}
-        ${example ? `<div class="answer-block answer-block--example">${escapeHtml(example)}</div>` : ''}
+        ${tag ? `<span class="word-type">${escapeHtml(tag)}</span>` : ''}
+        ${example ? `<div class="answer-stack"><div class="answer-block answer-block--example">${escapeHtml(example)}</div></div>` : ''}
         <button id="next-btn" class="btn-primary">Suivant</button>
       ` : `
         <div class="flashcard-word">${escapeHtml(prompt)}</div>

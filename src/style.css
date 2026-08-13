@@ -407,15 +407,8 @@ th, td {
 /* Cartes résultat : le fond est vif, tout le texte passe en clair pour rester
    lisible (y compris les blocs internes qui utilisent --color-muted ailleurs). */
 .flashcard--correct p,
-.flashcard--incorrect p,
-.flashcard--correct .answer-block,
-.flashcard--incorrect .answer-block {
+.flashcard--incorrect p {
   color: var(--color-text);
-}
-
-.flashcard--correct .answer-block,
-.flashcard--incorrect .answer-block {
-  background: rgba(4, 44, 83, 0.35);
 }
 
 .flashcard--retry {
@@ -460,33 +453,97 @@ th, td {
   flex-direction: column;
 }
 
+/* Niveau 1 — pastille ✓/✗ posée sur la carte, légèrement surélevée. */
+.result-icon-badge {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.18);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  font-size: 1.7rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--color-text);
+  margin-bottom: 14px;
+}
+
+/* Niveau 2 — le mot anglais, posé à même la carte, sans fond : c'est le héros. */
 .flashcard-word {
   font-size: 2rem;
   font-weight: 700;
   line-height: 1.2;
 }
 
-.flashcard-result-icon {
-  font-size: 3rem;
-  line-height: 1;
-  margin-bottom: 8px;
+/* Type grammatical : petit bloc plein juste sous le mot. Le bleu marine profond
+   tranche aussi bien sur le vert que sur le rouge des cartes résultat. */
+.word-type {
+  align-self: flex-start;
+  margin-top: 10px;
+  padding: 5px 12px;
+  border-radius: 8px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+.flashcard--discover .word-type {
+  align-self: center;
+}
+
+/* Pile des deux blocs d'info : ils se chevauchent légèrement pour donner
+   l'impression de feuilles empilées l'une sur l'autre. */
+.answer-stack {
+  margin-top: 18px;
 }
 
 .answer-block {
+  position: relative;
   border-radius: 12px;
-  padding: 10px 14px;
-  margin-top: 10px;
+  padding: 12px 14px;
 }
 
+/* Niveau 3 — la traduction : feuille SURÉLEVÉE (fond clair + ombre portée),
+   posée par-dessus le bloc d'exemple. */
 .answer-block--fr {
+  z-index: 2;
   background: var(--color-accent-fr-bg);
   color: var(--color-accent-fr);
-  font-weight: 600;
+  font-weight: 700;
+  font-size: 1.05rem;
 }
 
+.flashcard--correct .answer-block--fr,
+.flashcard--incorrect .answer-block--fr {
+  background: rgba(255, 255, 255, 0.2);
+  border-top: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+  color: var(--color-text);
+}
+
+/* Niveau 4 — l'exemple : feuille ENFONCÉE (fond sombre + ombre interne), glissée
+   sous la traduction dont l'ombre vient mordre son bord supérieur. */
 .answer-block--example {
+  z-index: 1;
   background: var(--color-example-bg);
   color: var(--color-example-text);
+  font-style: italic;
+  font-size: 0.95rem;
+  border-left: 3px solid rgba(255, 255, 255, 0.22);
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+/* Le chevauchement ne s'applique que quand les deux blocs coexistent. */
+.answer-block--fr + .answer-block--example {
+  margin-top: -8px;
+  padding-top: 18px;
 }
 
 .dot-progress {
