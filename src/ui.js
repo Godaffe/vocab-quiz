@@ -111,7 +111,7 @@ function questionCard(area, { prompt, hint, badge, variant = 'question', index, 
     const body = renderFlashcard(area, { variant, badge, dotsTotal: total, dotsFilled: index });
     body.innerHTML = `
       <p class="prompt">${escapeHtml(prompt)}</p>
-      ${hint ? `<p><em>${escapeHtml(hint)}</em></p>` : ''}
+      ${hint ? `<p class="flashcard-hint">${escapeHtml(hint)}</p>` : ''}
       <input type="text" id="answer-input" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
       <button id="submit-btn">Valider</button>
     `;
@@ -253,16 +253,20 @@ async function runQuestion(container, item, ctx) {
 
 // "Mots compliqués" — Phase 1: En -> Fr/Meaning, no hint. Phase 2: Fr/Meaning -> En, hangman
 // hint. Phase 3: Fr/Meaning -> En, no hint (same question as the normal circuit).
+// Each letter (including the two revealed ones) is space-separated so the blanks stay
+// individually countable instead of merging into one solid underscore run.
 function maskWord(word) {
-  if (word.length <= 2) return word;
-  return word[0] + '_'.repeat(word.length - 2) + word[word.length - 1];
+  if (word.length <= 2) return word.split('').join(' ');
+  const middle = '_'.repeat(word.length - 2).split('').join(' ');
+  return `${word[0]} ${middle} ${word[word.length - 1]}`;
 }
 
 // Vocabulaire masks each word of the base translation individually; Grammaire/Expressions
-// mask the whole answer as a single block (spaces included in the mask).
+// mask the whole answer as a single block. Word boundaries use a wider gap than the
+// per-letter spacing so they stay visually distinct from the letter blanks.
 function maskHint(itemType, text) {
   if (itemType === 'vocabulaire') {
-    return text.split(' ').map(maskWord).join(' ');
+    return text.split(' ').map(maskWord).join('   ');
   }
   return maskWord(text);
 }
@@ -282,35 +286,40 @@ function hardModeQuestion(item, phase) {
   return { prompt: item.prompt, expected: forwardExpected, hint: null, checkFn: forwardCheck };
 }
 
-async function runHardModeItem(container, item) {
-  let phase = item.hard_phase;
+// Asks `item` repeatedly at `targetPhase` until it leaves that phase — either advancing
+// forward (success), exiting the process entirely (phase-3 success or daily failure cap),
+// or demoting to a different phase (only phase 2/3 failures can demote across phases; a
+// phase-1 failure demotes to phase 1 itself, so it keeps looping here). Returning control to
+// the caller on any phase change is what lets renderHardMode group all items by phase instead
+// of finishing one item's whole 1→2→3 journey before starting the next.
+async function runHardModeRound(container, item, targetPhase) {
   while (true) {
-    const { prompt, expected, hint, checkFn } = hardModeQuestion(item, phase);
-    const badge = `Mots compliqués — Phase ${phase}`;
-    const answer = await questionCard(container, { prompt, hint, badge, index: phase, total: 3 });
+    const { prompt, expected, hint, checkFn } = hardModeQuestion(item, targetPhase);
+    const badge = `Mots compliqués — Phase ${targetPhase}`;
+    const answer = await questionCard(container, { prompt, hint, badge, index: targetPhase, total: 3 });
     const isCorrect = checkFn(answer);
 
-    if (isCorrect && phase === 3) {
-      await gradeHardAttempt(item, phase, true);
+    if (isCorrect && targetPhase === 3) {
+      await gradeHardAttempt(item, 3, true);
       await resultCard(container, { isCorrect: true, prompt, expected, index: 3, total: 3, badge: 'Sorti du mode compliqué !' });
-      return;
+      return { done: true };
     }
 
-    const result = await gradeHardAttempt(item, phase, isCorrect);
+    const result = await gradeHardAttempt(item, targetPhase, isCorrect);
 
     if (isCorrect) {
-      phase = advancedPhase(phase, item.item_type);
-      continue;
+      return { done: false, newPhase: advancedPhase(targetPhase, item.item_type) };
     }
 
-    await resultCard(container, { isCorrect: false, prompt, expected, index: phase, total: 3 });
+    await resultCard(container, { isCorrect: false, prompt, expected, index: targetPhase, total: 3 });
     if (result.cappedToday) {
       await resultCard(container, {
-        isCorrect: false, prompt: "Trop d'erreurs sur cet item aujourd'hui", expected: 'On retente demain.', index: phase, total: 3,
+        isCorrect: false, prompt: "Trop d'erreurs sur cet item aujourd'hui", expected: 'On retente demain.', index: targetPhase, total: 3,
       });
-      return;
+      return { done: true };
     }
-    phase = demotedPhase(phase, item.item_type);
+    const demoted = demotedPhase(targetPhase, item.item_type);
+    if (demoted !== targetPhase) return { done: false, newPhase: demoted };
   }
 }
 
@@ -323,10 +332,20 @@ function renderModeShell(container, onExit) {
   return container.querySelector('#question-area');
 }
 
+// All items are asked at phase 1 first, then all items still active at phase 2, then phase 3
+// — never a given item's full 1→2→3 journey before the next item starts. Phase-1 is always
+// drained first each iteration, so an item demoted back to phase 1 (a phase-2 failure) is
+// reprocessed there ahead of the remaining phase-2/3 items, same as any other phase-1 item.
 export async function renderHardMode(container, { hardItems }, { onComplete, onExit }) {
   const area = renderModeShell(container, onExit);
-  for (const item of hardItems) {
-    await runHardModeItem(area, item);
+  const queues = { 1: [], 2: [], 3: [] };
+  for (const item of hardItems) queues[item.hard_phase].push(item);
+
+  while (queues[1].length || queues[2].length || queues[3].length) {
+    const phase = queues[1].length ? 1 : queues[2].length ? 2 : 3;
+    const item = queues[phase].shift();
+    const outcome = await runHardModeRound(area, item, phase);
+    if (!outcome.done) queues[outcome.newPhase].push(item);
   }
   onComplete();
 }

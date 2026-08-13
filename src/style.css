@@ -308,6 +308,12 @@ th, td {
   color: var(--color-streak);
 }
 
+.flashcard-hint {
+  font-family: 'Courier New', monospace;
+  letter-spacing: 3px;
+  font-size: 1.1rem;
+}
+
 .flashcard-body {
   flex: 1;
   display: flex;
