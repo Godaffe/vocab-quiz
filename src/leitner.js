@@ -267,6 +267,22 @@ export function getAllProgress() {
   return all(unionAll('1=1'));
 }
 
+// État brut d'un item, lu avant/après notation pour établir le bilan de fin de session
+// (montées de niveau, reprogrammations, mots appris) sans deviner les règles Leitner.
+export function getProgressRow(itemType, itemKey) {
+  return get('SELECT * FROM progress WHERE item_type = ? AND item_key = ?', [itemType, itemKey]);
+}
+
+// Items du circuit normal déjà notés aujourd'hui — le dénominateur affiché sur l'accueil
+// est ce compte plus ce qu'il reste à faire, jamais un total inventé.
+export function countReviewedToday(todayISO) {
+  const row = get(
+    "SELECT COUNT(*) as c FROM progress WHERE learning_process = 'normal' AND last_reviewed_at LIKE ?",
+    [`${todayISO}%`]
+  );
+  return row ? row.c : 0;
+}
+
 export function getLearnedCount() {
   return get(`SELECT COUNT(*) as c FROM (${unionAll('is_learned = 1')})`).c;
 }

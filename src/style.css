@@ -1,5 +1,8 @@
 @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap");
 
+/* Système « Leitner » — tokens repris tels quels du design system, puis les classes de
+   composants (ds-*) que les écrans de la maquette utilisent. */
+
 :root {
   /* ---- fonts ---- */
   --font-display: "Space Grotesk", system-ui, sans-serif;
@@ -18,26 +21,32 @@
   --crimson-50: #FCE3E8; --crimson-100: #F7C2CC; --crimson-500: #C4123A; --crimson-600: #A50B2F; --crimson-700: #820724;
   --gold-50: #FBF0D4; --gold-100: #F5DFA6; --gold-400: #D89A00; --gold-500: #B37F00;
   --teal-50: #DDF0F2; --teal-100: #B8E2E7; --teal-500: #0D6E7A; --teal-600: #0A5762;
-  --violet-50: #EDE5FC; --violet-100: #DCCDF9; --violet-500: #6D28D9;
+  --violet-50: #EDE5FC; --violet-100: #DCCDF9; --violet-500: #6D28D9; --violet-600: #5820B0;
 
   /* ---- neutrals: warm, linen-tinted; no cool grey ---- */
-  --ink-900: #211F14; --ink-800: #2E2A20; --ink-700: #433D30; --ink-500: #6E6754;
+  --ink-950: #14130C; --ink-900: #211F14; --ink-800: #2E2A20; --ink-700: #433D30; --ink-500: #6E6754;
   --ink-400: #8F8874; --ink-300: #B5AD96; --ink-200: #DCD5C2; --ink-100: #E9E4D5;
 
   --canvas: #EDE9DC; --canvas-deep: #DCD6C6; --paper: #F7F4EB; --paper-high: #FDFBF5;
 
   --surface-sunken: #E6E1D2;
+  --surface-overlay: rgba(33, 31, 20, .5);
   --text-strong: #211F14; --text-body: #433D30; --text-muted: #6E6754; --text-faint: #8F8874;
   --text-on-primary: #FFFFFF; --text-on-inverse: var(--stone-50);
   --border-hairline: #DCD5C2; --border-field: #B5AD96; --border-on-canvas: #CFC4A9;
 
-  --cat-tricky-soft: var(--violet-50); --cat-failed-soft: var(--crimson-50);
+  /* ---- catégories de session ---- */
+  --cat-new: var(--copper-500); --cat-new-soft: var(--copper-50);
+  --cat-review: var(--teal-500); --cat-review-soft: var(--teal-50);
+  --cat-tricky: var(--violet-500); --cat-tricky-soft: var(--violet-50);
+  --cat-failed: var(--crimson-500); --cat-failed-soft: var(--crimson-50);
 
   /* ---- radii / spacing / elevation / motion ---- */
   --radius-xs: 6px; --radius-sm: 10px; --radius-md: 14px; --radius-lg: 18px; --radius-xl: 24px;
-  --radius-card: 20px; --radius-pill: 999px;
+  --radius-card: 20px; --radius-tile: 24px; --radius-pill: 999px;
 
-  --gutter-screen: 18px; --card-pad: 18px; --card-pad-lg: 24px;
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 20px; --space-6: 24px;
+  --gutter-screen: 18px; --card-pad: 18px; --card-pad-lg: 24px; --screen-max: 420px;
   --tap-min: 48px; --tap-comfort: 54px; --tap-hero: 58px;
 
   --keyline: 0 0 0 1px var(--border-hairline);
@@ -52,8 +61,11 @@
   --ring-focus: 0 0 0 3px rgba(176, 74, 15, .35);
   --inset-well: inset 0 1px 3px rgba(33, 31, 20, .10);
 
-  --dur-instant: 80ms; --dur-fast: 150ms; --dur-base: 220ms; --dur-slow: 380ms;
+  --dur-instant: 80ms; --dur-fast: 150ms; --dur-base: 220ms; --dur-slow: 380ms; --dur-flip: 480ms;
   --ease-out: cubic-bezier(.22, .9, .28, 1);
+  --ease-in-out: cubic-bezier(.45, 0, .35, 1);
+  --ease-spring: cubic-bezier(.2, 1.2, .3, 1);
+  --press-scale: .985; --press-travel: 1px;
   --transition-press: transform var(--dur-instant) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
 
   color-scheme: light;
@@ -61,10 +73,15 @@
 
 @keyframes ds-nudge { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
 @keyframes ds-scale-in { from { opacity: 0; transform: scale(.97); } to { opacity: 1; transform: none; } }
+@keyframes ds-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes ds-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ds-spin { to { transform: rotate(360deg); } }
+@keyframes ds-sheen { from { background-position: -160% 0; } to { background-position: 260% 0; } }
 
 * { box-sizing: border-box; }
 
 html, body { margin: 0; padding: 0; height: 100%; }
+html { -webkit-text-size-adjust: 100%; }
 
 body {
   background: var(--canvas);
@@ -75,18 +92,19 @@ body {
 }
 
 #app {
-  max-width: 480px;
+  max-width: var(--screen-max);
   margin: 0 auto;
   min-height: 100dvh;
-  padding: env(safe-area-inset-top) var(--gutter-screen) calc(env(safe-area-inset-bottom) + 76px);
+  padding: env(safe-area-inset-top) var(--gutter-screen) calc(env(safe-area-inset-bottom) + 82px);
   display: flex;
   flex-direction: column;
 }
 
+/* Pendant une session : la nav du bas disparaît et l'écran va au bord. */
 body.in-session #app { padding-bottom: env(safe-area-inset-bottom); }
-body.in-session .bottom-nav { display: none; }
+body.in-session .ds-tabbar { display: none; }
 
-#screen { display: flex; flex-direction: column; flex: 1; }
+#screen { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 
 h1 { font: 700 30px/1.02 var(--font-display); letter-spacing: -.03em; color: var(--text-strong); margin: 24px 0 8px; }
 h2 { font: 700 18px/1.18 var(--font-display); letter-spacing: -.015em; color: var(--text-strong); margin: 24px 0 4px; }
@@ -94,46 +112,91 @@ h3 { font: 600 16px/1.3 var(--font-display); color: var(--text-strong); margin: 
 p { color: var(--text-muted); line-height: 1.5; }
 
 button { font-family: inherit; }
+.ds-icon { display: block; flex: none; }
 
-/* ---------- buttons ---------- */
-.btn-primary,
+/* ---------- boutons ---------- */
+
 .ds-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: var(--space-2);
   border: 0;
   cursor: pointer;
   font: 700 16px/1 var(--font-ui);
   letter-spacing: -.015em;
   border-radius: var(--radius-md);
   min-height: var(--tap-comfort);
-  padding: 0 20px;
+  padding: 0 var(--space-5);
   transition: var(--transition-press);
   user-select: none;
-  -webkit-tap-highlight-color: transparent;
   background: var(--copper-500);
   color: var(--text-on-primary);
   box-shadow: var(--shadow-primary);
 }
 
-button:active:not(:disabled) { transform: translateY(1px) scale(.985); }
-button:disabled { cursor: not-allowed; background: var(--surface-sunken); color: var(--text-faint); box-shadow: none; }
+.ds-btn--hero { min-height: var(--tap-hero); width: 100%; font-size: 17px; border-radius: var(--radius-lg); }
+.ds-btn--sm { min-height: 38px; padding: 0 var(--space-4); font-size: 14px; border-radius: var(--radius-sm); }
+.ds-btn--correct { background: var(--green-500); box-shadow: var(--shadow-correct); }
+.ds-btn--danger { background: var(--crimson-500); box-shadow: var(--shadow-wrong); }
+.ds-btn--dark { background: var(--ink-900); color: var(--text-on-inverse); box-shadow: var(--shadow-card); }
+.ds-btn--secondary { background: var(--paper-high); color: var(--text-strong); box-shadow: var(--keyline-strong), var(--shadow-flat); }
+.ds-btn--ghost { background: transparent; color: var(--text-muted); box-shadow: none; }
+.ds-btn:focus-visible { outline: 0; box-shadow: var(--ring-focus); }
+.ds-btn:active:not(:disabled) { transform: translateY(var(--press-travel)) scale(var(--press-scale)); }
+.ds-btn:disabled { cursor: not-allowed; background: var(--surface-sunken); color: var(--text-faint); box-shadow: 0 0 0 1px var(--border-hairline); }
 
-/* Bouton d'action principal d'une carte : pleine largeur, poussé tout en bas de la
-   carte (donc en bas de l'écran) pour rester sous le pouce. */
-.btn-primary {
-  margin-top: auto;
-  width: 100%;
-  min-height: var(--tap-hero);
-  border-radius: var(--radius-lg);
-  font-size: 17px;
+/* Quitter est délibérément discret : capsule hairline, jamais colorée. */
+.ds-exit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  min-width: 44px;
+  padding: 0 12px;
+  border: 1.5px solid var(--border-on-canvas);
+  background: transparent;
+  border-radius: var(--radius-pill);
+  color: var(--text-muted);
+  font: 600 12px/1 var(--font-ui);
+  cursor: pointer;
+  flex: none;
+  transition: var(--transition-press);
 }
 
-.btn-primary--correct { background: var(--green-500); box-shadow: var(--shadow-correct); }
-.btn-primary--dark { background: var(--ink-900); color: var(--text-on-inverse); box-shadow: var(--shadow-card); }
+.ds-exit:active { transform: scale(.96); }
 
-input[type="text"], input[type="number"] {
+/* ---------- champs ---------- */
+
+.ds-field {
+  width: 100%;
+  min-height: var(--tap-comfort);
+  border-radius: var(--radius-md);
+  border: 2px solid var(--ink-800);
+  background: var(--paper-high);
+  padding: 0 var(--space-4);
+  /* ≥16px évite le zoom automatique d'iOS au focus. */
+  font: 600 18px/1 var(--font-display);
+  color: var(--text-strong);
+  box-shadow: var(--inset-well);
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.ds-field::placeholder { color: var(--text-faint); font-family: var(--font-ui); font-weight: 400; }
+.ds-field:focus { outline: 0; border-color: var(--copper-500); box-shadow: var(--ring-focus); }
+.ds-field--correct, .ds-field--correct:focus { border-color: var(--green-500); background: var(--green-50); box-shadow: var(--inset-well); }
+/* Un seul écart de 4 px, jamais répété : la faute se signale, elle ne s'agite pas. */
+.ds-field--wrong, .ds-field--wrong:focus {
+  border-color: var(--crimson-500);
+  background: var(--crimson-50);
+  box-shadow: var(--inset-well);
+  animation: ds-nudge var(--dur-slow) var(--ease-in-out);
+}
+
+input[type="text"], input[type="number"], input[type="file"] {
   font: inherit;
   width: 100%;
   padding: 14px 16px;
@@ -151,15 +214,477 @@ input[type="text"]:focus, input[type="number"]:focus {
   box-shadow: var(--ring-focus);
 }
 
-/* ≥16px évite le zoom automatique d'iOS au focus du champ. */
-.flashcard input[type="text"] {
-  font: 600 18px/1 var(--font-display);
-  min-height: var(--tap-comfort);
-  border-width: 2px;
-  border-color: var(--ink-800);
+.ds-field { margin: 0; }
+
+/* ---------- progression ---------- */
+
+.ds-progress { height: 8px; border-radius: var(--radius-pill); background: var(--ink-300); overflow: hidden; }
+.ds-progress__fill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--copper-500);
+  transition: width var(--dur-slow) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
+}
+/* Deux phases dans une même session : plein = phase en cours, rayé = l'autre. */
+.ds-progress__fill--phase2 { background: repeating-linear-gradient(115deg, var(--gold-400) 0 7px, var(--copper-400) 7px 14px); }
+
+.ds-counter { font: 400 13px/1.4 var(--font-mono); letter-spacing: .04em; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+/* ---------- badges / pastilles ---------- */
+
+.ds-badge { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border-radius: var(--radius-sm); font: 600 12px/1.25 var(--font-ui); background: var(--stone-100); color: var(--ink-800); }
+.ds-badge--primary { background: var(--copper-500); color: var(--text-on-primary); }
+.ds-badge--correct { background: var(--green-500); color: #fff; }
+.ds-badge--wrong { background: var(--crimson-500); color: #fff; }
+.ds-badge--tricky { background: var(--violet-500); color: #fff; }
+.ds-badge--streak { background: var(--gold-400); color: #2B1F00; }
+
+/* Type grammatical : fond complémentaire clair + filet foncé — c'est une métadonnée. */
+.ds-pos {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: var(--radius-xs);
+  background: var(--teal-50);
+  color: var(--teal-600);
+  box-shadow: inset 0 0 0 1.5px var(--teal-500);
+  font: 400 11px/1 var(--font-mono);
+  text-transform: lowercase;
+  letter-spacing: .02em;
 }
 
-.flashcard input { user-select: text; -webkit-user-select: text; }
+.ds-streak {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px 0 9px;
+  border-radius: var(--radius-pill);
+  background: var(--gold-400);
+  color: #2B1F00;
+  box-shadow: 0 0 0 1px rgba(10, 5, 40, .2);
+}
+
+.ds-streak__n { font: 700 15px/1 var(--font-display); }
+.ds-streak__u { font: 600 12px/1.25 var(--font-ui); opacity: .75; }
+
+/* ---------- accueil : mosaïque ---------- */
+
+.home-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 0 0; }
+
+.home-header .today {
+  font: 600 13px/1 var(--font-ui);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.stat-row { display: flex; gap: 34px; padding: 16px 0 0; }
+.stat-chip .stat-value { font: 700 32px/1 var(--font-display); letter-spacing: -.03em; color: var(--text-strong); }
+.stat-chip--learned .stat-value { color: var(--green-600); }
+.stat-chip .stat-label { font: 500 13px/1 var(--font-ui); color: var(--text-body); margin-top: 8px; }
+
+/* Colonne cuivre à gauche sur 3 rangs, puis révision / compliqués / ratés à droite. */
+.home-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: auto auto auto;
+  gap: 10px;
+  padding: 16px 0 0;
+  align-items: stretch;
+}
+
+.tile {
+  position: relative;
+  border: 0;
+  border-radius: var(--radius-tile);
+  padding: 18px;
+  color: var(--paper-high);
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  transition: var(--transition-press);
+}
+
+.tile:active:not(:disabled) { transform: translateY(1px) scale(var(--press-scale)); }
+.tile:focus-visible { outline: 0; box-shadow: var(--ring-focus); }
+
+.tile:disabled {
+  cursor: not-allowed;
+  background: var(--surface-sunken);
+  color: var(--text-faint);
+  box-shadow: var(--keyline);
+}
+
+.tile:disabled .tile-ring, .tile:disabled .tile-ring-in { background: var(--surface-sunken); }
+.tile:disabled .ds-progress { background: var(--ink-200); }
+.tile:disabled .ds-progress__fill { background: var(--ink-300); }
+
+.tile-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: 600 12px/1 var(--font-ui);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.tile-meta { font: 500 12.5px/1.4 var(--font-ui); opacity: .9; }
+
+/* Mots nouveaux — anneau du jour */
+.tile--new {
+  grid-row: span 3;
+  background: var(--cat-new);
+  padding: 20px;
+  box-shadow: 0 14px 28px -14px rgba(176, 74, 15, .7);
+}
+
+.tile-ring-wrap { display: grid; place-items: center; padding: 22px 0 26px; }
+
+/* Déclarer --pct rend l'angle interpolable : sans @property, un conic-gradient saute d'une
+   valeur à l'autre. Le remplissage est alors instantané, jamais faux. */
+@property --pct {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 0;
+}
+
+.tile-ring {
+  width: 132px;
+  height: 132px;
+  border-radius: 50%;
+  background: conic-gradient(var(--paper-high) calc(var(--pct, 0) * 3.6deg), rgba(253, 251, 245, .28) 0);
+  display: grid;
+  place-items: center;
+  transition: --pct var(--dur-slow) var(--ease-out);
+}
+
+.tile-ring-in {
+  width: 104px;
+  height: 104px;
+  border-radius: 50%;
+  background: var(--cat-new);
+  display: grid;
+  place-items: center;
+  text-align: center;
+}
+
+.tile-ring-n { font: 700 36px/1 var(--font-display); letter-spacing: -.03em; }
+.tile-ring-d { font: 500 12px/1 var(--font-mono); opacity: .85; margin-top: 5px; }
+.tile--new .tile-title { font: 700 30px/1.08 var(--font-display); letter-spacing: -.03em; margin-top: auto; }
+.tile--new .tile-meta { margin-top: 10px; }
+
+/* À réviser */
+.tile--review {
+  background: var(--cat-review);
+  gap: 8px;
+  box-shadow: 0 14px 28px -18px rgba(13, 110, 122, .7);
+}
+
+.tile--review .tile-count { display: flex; align-items: baseline; gap: 7px; margin-top: auto; }
+.tile--review .tile-count b { font: 700 46px/1 var(--font-display); letter-spacing: -.04em; }
+.tile--review .tile-count span { font: 500 13px/1 var(--font-mono); opacity: .85; }
+.tile--review .ds-progress { height: 6px; background: rgba(253, 251, 245, .26); }
+.tile--review .ds-progress__fill { background: var(--paper-high); }
+
+/* Compliqués / ratés : mêmes aplats, la couleur porte le sens. */
+.tile--flat { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; }
+.tile--flat .tile-title { font: 600 15px/1.25 var(--font-ui); }
+.tile--flat .tile-count { font: 700 32px/1 var(--font-display); letter-spacing: -.03em; }
+.tile--tricky { background: var(--cat-tricky); box-shadow: 0 14px 28px -18px rgba(109, 40, 217, .7); }
+.tile--failed { background: var(--cat-failed); box-shadow: 0 14px 28px -18px rgba(196, 18, 58, .7); }
+
+/* ---------- coque de session ---------- */
+
+.mode-shell { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.ds-sessionbar { display: flex; align-items: center; gap: var(--space-3); min-height: 56px; }
+.ds-sessionbar .ds-counter { flex: 1; text-align: center; }
+.ds-sessionbar__right { min-width: 74px; display: flex; justify-content: flex-end; }
+.session-progress { padding: 0 0 12px; }
+
+#question-area { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.session-body { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 12px; min-height: 0; }
+.session-foot { padding: 16px 0 32px; display: flex; flex-direction: column; gap: 10px; }
+.session-note { text-align: center; font: 500 12.5px/1.4 var(--font-ui); color: var(--text-muted); }
+
+/* ---------- pile de cartes ---------- */
+
+/* La hauteur se propage en flex (jamais en %) : les parents sont étirés par flex-grow, une
+   hauteur en pourcentage s'y résoudrait à zéro. */
+.ds-stack { position: relative; display: flex; flex-direction: column; }
+.ds-stack__under {
+  position: absolute;
+  inset: 0;
+  background: var(--paper);
+  border-radius: var(--radius-card);
+  box-shadow: 0 0 0 1px var(--ink-300), var(--shadow-flat);
+}
+.ds-stack__live { position: relative; z-index: 1; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+/* ---------- carte découverte (retournement) ---------- */
+
+.ds-flip { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 300px; perspective: 1400px; touch-action: pan-y; cursor: pointer; }
+.ds-flip__inner { position: relative; flex: 1; min-height: 0; transform-style: preserve-3d; transition: transform var(--dur-flip) var(--ease-in-out); }
+.ds-flip--back .ds-flip__inner { transform: rotateY(180deg); }
+
+.ds-flip__face {
+  position: absolute;
+  inset: 0;
+  background: var(--paper-high);
+  border-radius: var(--radius-card);
+  box-shadow: var(--keyline), var(--shadow-raised);
+  padding: var(--card-pad-lg);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transition: opacity var(--dur-fast) var(--ease-out) var(--dur-fast);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  text-align: center;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.ds-flip__face--front { opacity: 1; }
+.ds-flip--back .ds-flip__face--front { opacity: 0; }
+.ds-flip__face--back { opacity: 0; transform: rotateY(180deg); }
+.ds-flip--back .ds-flip__face--back { opacity: 1; }
+
+.ds-flip__foot {
+  position: absolute;
+  left: 0; right: 0; bottom: 18px;
+  font: 500 12.5px/1.4 var(--font-ui);
+  color: var(--text-muted);
+}
+
+.ds-example {
+  margin-top: 4px;
+  padding: 14px;
+  width: 100%;
+  background: var(--surface-sunken);
+  border-radius: var(--radius-md);
+  box-shadow: inset 0 2px 5px rgba(33, 31, 20, .16), inset 0 0 0 1px var(--ink-300);
+  font: italic 400 13.5px/1.5 var(--font-ui);
+  color: var(--text-body);
+}
+
+/* ---------- carte question ---------- */
+
+.ds-qcard {
+  background: var(--paper-high);
+  border-radius: var(--radius-card);
+  box-shadow: var(--keyline), var(--shadow-raised);
+  padding: var(--card-pad-lg);
+  animation: ds-scale-in var(--dur-base) var(--ease-out);
+}
+
+/* L'or ne sert qu'à deux choses : la deuxième tentative et la série. */
+.ds-qcard--retry { background: var(--gold-50); box-shadow: 0 0 0 1.5px var(--gold-400), var(--shadow-raised); border-top: 4px solid var(--gold-500); }
+.ds-qcard__head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.ds-qcard__head .ds-prompt { flex: 1; }
+.ds-qcard--retry .ds-prompt { color: #5A3B00; }
+.ds-qcard__hint { margin-top: 16px; }
+.ds-qcard__slot { margin-top: 18px; }
+
+.ds-prompt { font: 600 12px/1.25 var(--font-ui); text-transform: uppercase; letter-spacing: .09em; color: var(--text-faint); }
+.ds-word { font: 700 38px/1.18 var(--font-display); letter-spacing: -.03em; color: var(--text-strong); text-wrap: balance; }
+.ds-word--lg { font-size: 46px; }
+
+/* Indice masqué : les lettres révélées s'affichent, les autres restent des créneaux de
+   largeur fixe — les limites de mots restent lisibles sans compter des tirets. */
+.ds-hint { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; align-items: flex-end; }
+.ds-hint__word { display: flex; gap: 5px; align-items: flex-end; }
+.ds-hint__slot { width: 13px; height: 3px; border-radius: 2px; background: var(--ink-400); }
+.ds-hint__slot--shown { width: auto; height: auto; background: none; font: 700 20px/1 var(--font-display); color: var(--text-strong); }
+
+/* ---------- carte résultat ---------- */
+
+.ds-result {
+  background: var(--paper-high);
+  border-radius: var(--radius-card);
+  box-shadow: var(--keyline), var(--shadow-raised);
+  overflow: hidden;
+  cursor: pointer;
+  animation: ds-scale-in var(--dur-base) var(--ease-out);
+}
+
+.ds-result__band { height: 10px; }
+.ds-result__head { display: flex; align-items: center; gap: var(--space-4); padding: var(--space-5) var(--card-pad); border-bottom: 1.5px solid var(--ink-200); }
+.ds-result__headtext { min-width: 0; flex: 1; }
+.ds-result__verdictlabel { font: 600 12px/1.25 var(--font-ui); text-transform: uppercase; letter-spacing: .09em; margin-bottom: 4px; }
+.ds-result__answer { font: 700 30px/1.1 var(--font-display); letter-spacing: -.03em; color: var(--text-strong); }
+.ds-result__answer + .ds-pos { margin-top: 8px; }
+.ds-result__translation { padding: var(--space-4) var(--card-pad); }
+.ds-result__translation .ds-result__blocklabel { color: rgba(255, 255, 255, .72); }
+.ds-result__translation .ds-result__blockvalue { font: 600 18px/1.35 var(--font-ui); color: #fff; }
+.ds-result__example { padding: var(--space-4) var(--card-pad) var(--space-5); background: var(--paper); border-left: 4px solid var(--copper-300); box-shadow: var(--inset-well); }
+.ds-result__example .ds-result__blockvalue { font: 400 16px/1.5 var(--font-ui); color: var(--text-body); font-style: italic; }
+.ds-result__blocklabel { font: 600 12px/1.25 var(--font-ui); text-transform: uppercase; letter-spacing: .09em; color: var(--text-muted); margin-bottom: 4px; }
+
+.ds-verdict {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  flex: 0 0 56px;
+  border-radius: var(--radius-pill);
+  color: #fff;
+  animation: ds-scale-in var(--dur-base) var(--ease-spring);
+}
+
+.ds-verdict--correct { background: var(--green-500); box-shadow: var(--shadow-correct); }
+.ds-verdict--wrong { background: var(--crimson-500); box-shadow: var(--shadow-wrong); }
+
+/* Conséquence Leitner : écrite noir sur blanc, sous la carte. */
+.consequence {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 14px;
+  background: var(--paper);
+  border-radius: var(--radius-md);
+  box-shadow: inset 0 0 0 1px var(--ink-200);
+  font: 500 13px/1.45 var(--font-ui);
+  color: var(--text-body);
+}
+
+.consequence strong { color: var(--text-strong); }
+
+/* ---------- bilan de session ---------- */
+
+.recap-title { font: 700 34px/1.1 var(--font-display); letter-spacing: -.03em; color: var(--text-strong); }
+.recap-sub { font: 500 14px/1.5 var(--font-ui); color: var(--text-body); }
+
+.recap-card {
+  background: var(--paper-high);
+  border-radius: var(--radius-card);
+  box-shadow: 0 0 0 1px var(--ink-200), 0 12px 26px -18px rgba(33, 31, 20, .5);
+  overflow: hidden;
+}
+
+.recap-nums { display: flex; justify-content: space-between; padding: 18px; border-bottom: 1.5px solid var(--ink-200); }
+.recap-num { font: 700 32px/1 var(--font-display); color: var(--text-strong); }
+.recap-num--ok { color: var(--green-600); }
+.recap-num--ko { color: var(--crimson-500); }
+.recap-numlabel { font: 500 12px/1 var(--font-ui); color: var(--text-muted); margin-top: 7px; }
+
+.recap-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 15px 18px; font: 500 13.5px/1.4 var(--font-ui); color: var(--text-body); border-bottom: 1px solid var(--ink-200); }
+.recap-row:last-child { border-bottom: 0; }
+.recap-row b { font: 500 13px/1 var(--font-mono); color: var(--text-strong); }
+
+.recap-streak {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  background: var(--gold-100);
+  border-radius: var(--radius-md);
+  box-shadow: inset 0 0 0 1px rgba(33, 31, 20, .12);
+  font: 600 13.5px/1.4 var(--font-ui);
+  color: #2B1F00;
+}
+
+/* ---------- nav du bas ---------- */
+
+.ds-tabbar {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  background: var(--paper-high);
+  border-top: 1.5px solid var(--ink-200);
+  box-shadow: 0 -6px 18px -10px rgba(33, 31, 20, .2);
+  padding: 6px 8px calc(10px + env(safe-area-inset-bottom));
+}
+
+.ds-tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-height: var(--tap-min);
+  border: 0;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text-faint);
+  font: 600 12px/1.25 var(--font-ui);
+  transition: color var(--dur-fast) var(--ease-out);
+}
+
+.ds-tab--active { color: var(--copper-700); }
+.ds-tab__mark { width: 18px; height: 3px; border-radius: 2px; background: transparent; margin-top: 1px; }
+.ds-tab--active .ds-tab__mark { background: var(--copper-500); }
+
+/* ---------- messages, chargement, dialogues ---------- */
+
+.ds-toast {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  background: var(--ink-900);
+  color: var(--stone-50);
+  font: 600 14px/1.35 var(--font-ui);
+  box-shadow: var(--shadow-float);
+  animation: ds-rise var(--dur-base) var(--ease-out);
+}
+
+.ds-toast--correct { background: var(--green-600); }
+.ds-toast--wrong { background: var(--crimson-600); }
+
+.ds-alert { display: flex; gap: var(--space-3); padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); font: 400 13px/1.45 var(--font-ui); animation: ds-rise var(--dur-base) var(--ease-out); }
+.ds-alert--success { background: var(--green-50); color: var(--green-700); box-shadow: inset 0 0 0 1.5px var(--green-500); }
+.ds-alert--error { background: var(--crimson-50); color: var(--crimson-700); box-shadow: inset 0 0 0 1.5px var(--crimson-500); }
+.ds-alert--warning { background: var(--gold-50); color: #5A3B00; box-shadow: inset 0 0 0 1.5px var(--gold-500); }
+
+.ds-spinner { width: 22px; height: 22px; border-radius: 50%; border: 2.5px solid var(--ink-200); border-top-color: var(--copper-500); animation: ds-spin 700ms linear infinite; }
+.ds-skel { background: linear-gradient(100deg, var(--ink-200) 20%, var(--paper-high) 40%, var(--ink-200) 60%); background-size: 220% 100%; border-radius: var(--radius-card); animation: ds-sheen 1.3s linear infinite; height: 74px; }
+
+.loading-block { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 22px 0; }
+.loading-block .loading-msg { font: 500 14px/1.5 var(--font-ui); color: var(--text-body); text-align: center; }
+.skel-stack { display: flex; flex-direction: column; gap: 10px; }
+
+/* Le scrim floute l'écran, le titre nomme la perte, le bouton nomme l'acte. */
+.ds-overlay { position: fixed; inset: 0; display: grid; place-items: center; padding: 20px; z-index: 50; }
+.ds-scrim { position: absolute; inset: 0; background: var(--surface-overlay); backdrop-filter: blur(3px); animation: ds-fade var(--dur-fast) var(--ease-out); }
+
+.ds-dialog {
+  position: relative;
+  background: var(--paper-high);
+  border-radius: var(--radius-xl);
+  padding: var(--space-6);
+  box-shadow: var(--shadow-float);
+  animation: ds-scale-in var(--dur-base) var(--ease-spring);
+  max-width: 320px;
+  width: 100%;
+}
+
+.ds-dialog h3 { font: 700 22px/1.18 var(--font-display); letter-spacing: -.015em; margin: 0 0 8px; }
+.ds-dialog p { font: 400 15px/1.5 var(--font-ui); color: var(--text-body); margin: 0; }
+.ds-dialog__actions { display: grid; gap: 8px; margin-top: 20px; }
+
+/* ---------- réglages / statistiques ---------- */
+
+.ds-section { background: var(--paper-high); border-radius: var(--radius-card); box-shadow: var(--keyline), var(--shadow-card); overflow: hidden; margin-top: 12px; }
+.ds-section__head { display: flex; align-items: center; gap: 10px; padding: var(--space-4) var(--card-pad) var(--space-3); border-bottom: 1.5px solid var(--ink-200); }
+.ds-section__title { font: 600 18px/1.18 var(--font-display); color: var(--text-strong); }
+.ds-section__body { padding: var(--space-4) var(--card-pad); display: grid; gap: var(--space-3); }
+.ds-section__body p { margin: 0; font-size: 13.5px; }
+.ds-section--danger .ds-section__head { color: var(--crimson-600); background: var(--crimson-50); border-bottom-color: var(--crimson-500); }
+.ds-section--danger .ds-section__title { color: var(--crimson-600); }
+
+.ds-kv { display: flex; justify-content: space-between; gap: var(--space-3); font: 400 13px/1.45 var(--font-ui); padding: 8px 0; border-bottom: 1px solid var(--ink-200); }
+.ds-kv:last-child { border-bottom: 0; }
+.ds-kv__v { font: 400 12px/1.4 var(--font-mono); color: var(--text-strong); }
 
 .progress-table-wrap { overflow-x: auto; }
 
@@ -173,545 +698,12 @@ th {
 td { padding: 11px 12px; border-bottom: 1px solid var(--ink-200); color: var(--text-body); white-space: nowrap; }
 tbody tr:nth-child(even) td { background: var(--paper); }
 
-/* --- Coque de session --- */
-
-.mode-shell { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-
-.mode-topbar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 0 12px;
+/* Le retournement, l'écart du champ et les entrées de carte sont supprimés ; l'anneau de
+   chargement et les squelettes restent animés, ce sont des indicateurs d'état, pas du décor. */
+@media (prefers-reduced-motion: reduce) {
+  *:not(.ds-spinner):not(.ds-skel) {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
 }
-
-.mode-topbar .progress-bar { flex: 1; }
-
-.mode-counter {
-  font: 400 13px/1.4 var(--font-mono);
-  letter-spacing: .04em;
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-#question-area { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-
-/* Quitter est délibérément discret : capsule hairline, jamais coloré. */
-.exit-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 36px;
-  min-width: 44px;
-  min-height: 44px;
-  padding: 0 12px;
-  border: 1.5px solid var(--border-on-canvas);
-  background: transparent;
-  border-radius: var(--radius-pill);
-  color: var(--text-muted);
-  font: 600 12px/1 var(--font-ui);
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.exit-btn:active:not(:disabled) { transform: scale(.96); }
-
-/* --- Home dashboard --- */
-
-.home-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  padding: 10px 0 0;
-}
-
-.home-header .today {
-  font: 600 12px/1 var(--font-ui);
-  letter-spacing: .09em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  padding-top: 9px;
-}
-
-.streak-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 12px 0 9px;
-  border-radius: var(--radius-pill);
-  background: var(--gold-400);
-  color: #2B1F00;
-  font: 700 15px/1 var(--font-display);
-  box-shadow: 0 0 0 1px rgba(10, 5, 40, .2);
-}
-
-.stat-row {
-  display: flex;
-  gap: 22px;
-  align-items: flex-end;
-  padding: 14px 0 0;
-  margin-bottom: 0;
-}
-
-.stat-chip { background: none; padding: 0; }
-
-.stat-chip .stat-value {
-  font: 700 22px/1 var(--font-display);
-  color: var(--text-strong);
-}
-
-.stat-chip.stat-chip--learned .stat-value { color: var(--green-500); }
-
-.stat-chip .stat-label {
-  font: 500 12px/1.3 var(--font-ui);
-  color: var(--text-muted);
-  margin-top: 4px;
-}
-
-/* 2x2 grid : la carte "Mots nouveaux" occupe la colonne de gauche sur 2 lignes,
-   "Révision" prend la première ligne à droite, "Mots compliqués"/"Mots ratés"
-   se partagent la seconde ligne à droite. */
-.home-grid {
-  display: grid;
-  grid-template-columns: 1.25fr 1fr;
-  grid-template-rows: auto auto;
-  gap: 10px;
-  padding: 22px 0 0;
-}
-
-.session-card {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  width: 100%;
-  text-align: left;
-  border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-card);
-  padding: var(--card-pad);
-  cursor: pointer;
-  min-height: 140px;
-  box-shadow: var(--keyline), var(--shadow-card);
-  transition: var(--transition-press);
-}
-
-.session-card:active:not(:disabled) { transform: translateY(1px) scale(.99); }
-
-.session-card:disabled {
-  background: var(--surface-sunken);
-  border-color: var(--border-hairline);
-  color: var(--text-faint);
-  box-shadow: var(--keyline);
-  cursor: not-allowed;
-}
-
-.session-card .session-card-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font: 600 12px/1 var(--font-ui);
-  text-transform: uppercase;
-  letter-spacing: .09em;
-  opacity: .9;
-}
-
-.session-card .session-card-count {
-  font: 700 22px/1.1 var(--font-display);
-  letter-spacing: -.02em;
-  margin: 8px 0 10px;
-}
-
-.session-card .session-card-count small {
-  font: 500 12px/1.3 var(--font-ui);
-  opacity: .8;
-}
-
-/* "Mots nouveaux" : carte cuivre, en colonne 1, sur les 2 lignes. */
-#start-learning-btn {
-  grid-row: span 2;
-  background: var(--copper-500);
-  border-color: var(--copper-600);
-  color: var(--text-on-primary);
-  box-shadow: 0 12px 26px -14px rgba(176, 74, 15, .7);
-}
-
-#start-learning-btn:disabled {
-  background: var(--surface-sunken);
-  color: var(--text-faint);
-  box-shadow: var(--keyline);
-}
-
-/* "Révision" : carte encre sombre, colonne 2 ligne 1. */
-#start-review-btn {
-  background: var(--ink-900);
-  border-color: var(--ink-900);
-  color: var(--text-on-inverse);
-}
-
-#start-review-btn:disabled {
-  background: var(--surface-sunken);
-  color: var(--text-faint);
-  box-shadow: var(--keyline);
-}
-
-.compact-row {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.compact-card {
-  flex: 1;
-  border: 1px solid var(--violet-100);
-  border-radius: var(--radius-card);
-  padding: 14px;
-  min-height: 66px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  text-align: left;
-  cursor: pointer;
-  background: var(--cat-tricky-soft);
-  transition: var(--transition-press);
-}
-
-.compact-card:active:not(:disabled) { transform: scale(.98); }
-
-#start-failed-btn { background: var(--cat-failed-soft); border-color: var(--crimson-100); }
-
-.compact-card:disabled {
-  background: var(--surface-sunken);
-  border-color: var(--border-hairline);
-  cursor: not-allowed;
-}
-
-.compact-card .compact-card-icon { display: none; }
-
-.compact-card .compact-card-label {
-  font: 600 12px/1.25 var(--font-ui);
-  color: var(--violet-500);
-}
-
-#start-failed-btn .compact-card-label { color: var(--crimson-500); }
-
-.compact-card:disabled .compact-card-label,
-.compact-card:disabled .compact-card-value { color: var(--text-faint); }
-
-.compact-card .compact-card-value {
-  font: 700 24px/1 var(--font-display);
-  color: var(--violet-500);
-}
-
-#start-failed-btn .compact-card-value { color: var(--crimson-500); }
-
-.progress-bar {
-  height: 8px;
-  border-radius: var(--radius-pill);
-  background: var(--ink-200);
-  overflow: hidden;
-}
-
-.progress-bar-fill {
-  height: 100%;
-  background: var(--copper-500);
-  border-radius: var(--radius-pill);
-  transition: width var(--dur-slow) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
-}
-
-/* Phase de lecture des nouveaux mots (avant le quiz) : doré plutôt que cuivre. */
-.progress-bar-fill--discover { background: var(--gold-400); }
-
-/* --- Flashcards --- */
-
-.flashcard {
-  position: relative;
-  border-radius: var(--radius-card);
-  padding: var(--card-pad-lg) 40px var(--card-pad-lg) var(--card-pad-lg);
-  min-height: 320px;
-  display: flex;
-  flex-direction: column;
-  background: var(--paper-high);
-  box-shadow: var(--keyline), var(--shadow-raised);
-  touch-action: pan-y;
-  user-select: none;
-  -webkit-user-select: none;
-  animation: ds-scale-in var(--dur-base) var(--ease-out);
-}
-
-/* La carte remplit la hauteur restante de la coque, ce qui pousse son bouton
-   d'action (.btn-primary, margin-top:auto) tout en bas de l'écran. */
-.flashcard--fill { flex: 1; min-height: 0; }
-
-.flashcard--discover {
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-}
-
-.flashcard--retry {
-  background: var(--gold-50);
-  box-shadow: 0 0 0 1.5px var(--gold-400), var(--shadow-raised);
-  border-top: 4px solid var(--gold-500);
-}
-
-/* Cartes résultat : fond de couleur pleine, tout le texte passe en clair. */
-.flashcard--correct { background: var(--green-500); cursor: pointer; padding-top: 0; }
-.flashcard--incorrect { background: var(--crimson-500); cursor: pointer; padding-top: 0; }
-
-.flashcard--correct p, .flashcard--incorrect p { color: rgba(255, 255, 255, .85); }
-
-.flashcard-badge {
-  display: inline-flex;
-  align-self: flex-start;
-  align-items: center;
-  height: 24px;
-  font: 600 12px/1 var(--font-ui);
-  padding: 0 10px;
-  border-radius: var(--radius-pill);
-  background: var(--stone-100);
-  color: var(--ink-800);
-  margin-bottom: 12px;
-}
-
-.flashcard--discover .flashcard-badge { background: var(--copper-50); color: var(--copper-700); }
-.flashcard--retry .flashcard-badge { background: var(--gold-400); color: #2B1F00; }
-.flashcard-badge--tricky { background: var(--violet-500); color: #fff; }
-.flashcard-badge--correct { background: var(--green-500); color: #fff; }
-.flashcard-badge--wrong { background: var(--crimson-500); color: #fff; }
-
-.flashcard--correct .flashcard-badge, .flashcard--incorrect .flashcard-badge {
-  background: rgba(255, 255, 255, .22);
-  color: #fff;
-}
-
-/* Indice masqué (mots compliqués, phase 2) : les lettres révélées apparaissent en
-   toutes lettres, les lettres cachées restent des créneaux de largeur fixe — les
-   limites de mots restent visibles sans jamais compter les caractères par un simple
-   séparateur d'espace ambigu. */
-.flashcard-hint {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
-  justify-content: center;
-  align-items: flex-end;
-}
-
-.hint-word { display: flex; gap: 5px; align-items: flex-end; }
-
-.hint-slot {
-  width: 13px;
-  height: 3px;
-  border-radius: 2px;
-  background: var(--ink-400);
-}
-
-.hint-slot--shown {
-  width: auto;
-  height: auto;
-  background: none;
-  font: 700 20px/1 var(--font-display);
-  color: var(--text-strong);
-}
-
-.flashcard-body { flex: 1; display: flex; flex-direction: column; }
-
-.flashcard--question .flashcard-body,
-.flashcard--retry .flashcard-body { justify-content: flex-start; }
-
-/* ---- Carte question : consigne + mot + saisie ---- */
-
-.q-prompt {
-  font: 600 12px/1.25 var(--font-ui);
-  text-transform: uppercase;
-  letter-spacing: .09em;
-  color: var(--text-faint);
-  margin-bottom: 12px;
-}
-
-.flashcard--retry .q-prompt { color: #5A3B00; }
-
-.q-word {
-  font: 700 38px/1.18 var(--font-display);
-  letter-spacing: -.03em;
-  color: var(--text-strong);
-  text-align: center;
-  text-wrap: balance;
-}
-
-/* ---- Carte résultat ---- */
-
-/* Niveau 1 — pastille ✓/✗, disque plein contrasté sur le fond de couleur. */
-.result-icon-badge {
-  align-self: flex-start;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, .92);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, .22);
-  font-size: 1.9rem;
-  font-weight: 700;
-  line-height: 1;
-  margin-bottom: 14px;
-}
-
-.flashcard--correct .result-icon-badge { color: var(--green-600); }
-.flashcard--incorrect .result-icon-badge { color: var(--crimson-600); }
-
-/* Niveau 2 — le mot anglais, posé à même la carte : c'est le héros. */
-.flashcard-word {
-  font: 700 32px/1.1 var(--font-display);
-  letter-spacing: -.02em;
-  color: #fff;
-}
-
-/* Type grammatical : petit bloc plein juste sous le mot. */
-.word-type {
-  align-self: flex-start;
-  margin-top: 10px;
-  padding: 5px 12px;
-  border-radius: var(--radius-xs);
-  background: rgba(255, 255, 255, .92);
-  color: var(--text-strong);
-  font: 700 11px/1 var(--font-mono);
-  text-transform: lowercase;
-  letter-spacing: .02em;
-}
-
-.flashcard--discover .word-type { align-self: center; }
-.flashcard--discover .word-type { background: var(--teal-50); color: var(--teal-600); box-shadow: inset 0 0 0 1.5px var(--teal-500); }
-
-.answer-stack { margin-top: 18px; }
-
-.answer-block { position: relative; border-radius: var(--radius-md); padding: 12px 14px; }
-
-/* Niveau 3 — la traduction : bloc plein, contraste fort sur le fond de couleur. */
-.answer-block--fr {
-  z-index: 2;
-  background: rgba(255, 255, 255, .96);
-  color: var(--text-strong);
-  font: 600 18px/1.3 var(--font-display);
-}
-
-.flashcard--correct .answer-block--fr { color: var(--green-700); }
-.flashcard--incorrect .answer-block--fr { color: var(--crimson-700); }
-
-/* Niveau 4 — l'exemple/règle : bloc translucide, en retrait visuel. */
-.answer-block--example {
-  z-index: 1;
-  background: rgba(255, 255, 255, .16);
-  color: #fff;
-  font-style: italic;
-  font-size: .95rem;
-  border-left: 3px solid rgba(255, 255, 255, .4);
-  box-shadow: inset 0 2px 8px rgba(0, 0, 0, .12);
-}
-
-.answer-block--fr + .answer-block--example { margin-top: 12px; }
-
-/* ---- Carte découverte ---- */
-
-.discover-prompt {
-  font: 600 12px/1.25 var(--font-ui);
-  text-transform: uppercase;
-  letter-spacing: .09em;
-  color: var(--text-faint);
-}
-
-.discover-word {
-  font: 700 34px/1.18 var(--font-display);
-  letter-spacing: -.03em;
-  color: var(--text-strong);
-}
-
-.discover-answer {
-  font: 700 30px/1.1 var(--font-display);
-  letter-spacing: -.02em;
-  color: var(--text-strong);
-  text-align: center;
-}
-
-.discover-example {
-  margin-top: 14px;
-  padding: 12px;
-  background: var(--paper);
-  border-radius: var(--radius-sm);
-  box-shadow: inset 0 0 0 1px var(--ink-200);
-  font: 400 13px/1.45 var(--font-ui);
-  color: var(--text-body);
-  font-style: italic;
-}
-
-.discover-hint {
-  margin-top: auto;
-  font: 400 13px/1.45 var(--font-ui);
-  color: var(--text-muted);
-}
-
-/* ---- Points de progression ---- */
-
-.dot-progress {
-  position: absolute;
-  right: 12px;
-  top: 20px;
-  bottom: 20px;
-  display: flex;
-  flex-direction: column-reverse;
-  justify-content: flex-start;
-  gap: 8px;
-}
-
-.dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: transparent;
-  box-shadow: inset 0 0 0 1.5px var(--ink-300);
-}
-
-.flashcard--correct .dot, .flashcard--incorrect .dot { box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, .5); }
-
-.dot--filled { background: var(--copper-200); box-shadow: inset 0 0 0 1.5px var(--copper-300); }
-
-.flashcard--correct .dot--filled, .flashcard--incorrect .dot--filled {
-  background: rgba(255, 255, 255, .75);
-  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, .9);
-}
-
-/* --- Bottom nav --- */
-
-.bottom-nav {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  display: flex;
-  align-items: stretch;
-  gap: 2px;
-  background: var(--paper-high);
-  border-top: 1.5px solid var(--ink-200);
-  box-shadow: 0 -6px 18px -10px rgba(33, 31, 20, .2);
-  padding: 6px 8px calc(10px + env(safe-area-inset-bottom));
-}
-
-.bottom-nav button {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  min-height: var(--tap-min);
-  border: 0;
-  background: transparent;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  color: var(--text-faint);
-  font-size: 1.3rem;
-  padding: 4px;
-  box-shadow: none;
-}
-
-.bottom-nav button.active { color: var(--copper-700); }
