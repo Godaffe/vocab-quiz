@@ -85,19 +85,14 @@ export async function gradeAnswer(itemType, itemKey, isCorrect, todayISO, { pres
     nextReviewDate = row.next_review_date;
     requeueDate = row.requeue_date;
   } else {
+    // Any failure — a brand-new item as much as one already in review — leaves today's pool
+    // entirely and comes back as a new item (discovery card + test) on the earliest future day
+    // that still has room in the daily budget.
     boxLevel = nextLevelOnIncorrect(row.box_level);
     isLearned = 0;
     correctStreak = 0;
-    if (row.total_reviews > 0) {
-      // Review-mode failure: leave today's review pool entirely, come back as a new item
-      // (preview + test) on the earliest future day that still has room in the daily budget.
-      nextReviewDate = null;
-      requeueDate = scheduleRequeue(todayISO);
-    } else {
-      // A truly brand-new item failing its very first attempt: unchanged, stays due today.
-      nextReviewDate = addDays(todayISO, LEVEL_INTERVAL_DAYS[boxLevel] ?? 0);
-      requeueDate = null;
-    }
+    nextReviewDate = null;
+    requeueDate = scheduleRequeue(todayISO);
   }
 
   run(
