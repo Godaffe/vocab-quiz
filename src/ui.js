@@ -60,36 +60,35 @@ export async function renderHome(container, { onStartHard, onStartLearning, onSt
       <span class="streak-badge">🔥 ${streak}</span>
     </div>
     <div class="stat-row">
-      <div class="stat-chip">
+      <div class="stat-chip stat-chip--learned">
         <div class="stat-value">${learnedCount}</div>
-        <div class="stat-label">mots appris</div>
+        <div class="stat-label">Mots appris</div>
       </div>
       <div class="stat-chip">
         <div class="stat-value">${inProgressCount}</div>
-        <div class="stat-label">en cours d'apprentissage</div>
+        <div class="stat-label">Mots en cours</div>
       </div>
     </div>
-    <button class="session-card" id="start-learning-btn" ${newRemaining === 0 ? 'disabled' : ''}>
-      <div class="session-card-title">✨ Mots nouveaux</div>
-      <div class="session-card-count">${introducedToday} <small>/ ${dailyBudget} appris aujourd'hui</small></div>
-      <div class="progress-bar"><div class="progress-bar-fill" style="width:${newPct}%"></div></div>
-    </button>
-    <button class="session-card" id="start-review-btn" ${reviewRemaining === 0 ? 'disabled' : ''}>
-      <div class="session-card-title">🔄 Révision</div>
-      <div class="session-card-count">${reviewRemaining} <small>mot(s) à réviser</small></div>
-      <div class="progress-bar"><div class="progress-bar-fill" style="width:0%"></div></div>
-    </button>
-    <div class="compact-row">
-      <button class="compact-card" id="start-hard-btn" ${session.hardItems.length === 0 ? 'disabled' : ''}>
-        <div class="compact-card-icon">🧗</div>
-        <div class="compact-card-value">${session.hardItems.length}</div>
-        <div class="compact-card-label">Mots compliqués</div>
+    <div class="home-grid">
+      <button class="session-card" id="start-learning-btn" ${newRemaining === 0 ? 'disabled' : ''}>
+        <div class="session-card-title">✨ Mots nouveaux</div>
+        <div class="session-card-count">${introducedToday} <small>/ ${dailyBudget} appris aujourd'hui</small></div>
+        <div class="progress-bar"><div class="progress-bar-fill" style="width:${newPct}%"></div></div>
       </button>
-      <button class="compact-card" id="start-failed-btn" ${failedWords.length === 0 ? 'disabled' : ''}>
-        <div class="compact-card-icon">🎯</div>
-        <div class="compact-card-value">${failedWords.length}</div>
-        <div class="compact-card-label">Mots ratés</div>
+      <button class="session-card" id="start-review-btn" ${reviewRemaining === 0 ? 'disabled' : ''}>
+        <div class="session-card-title">🔄 À réviser</div>
+        <div class="session-card-count">${reviewRemaining} <small>mot(s)</small></div>
       </button>
+      <div class="compact-row">
+        <button class="compact-card" id="start-hard-btn" ${session.hardItems.length === 0 ? 'disabled' : ''}>
+          <div class="compact-card-label">Mots<br>compliqués</div>
+          <div class="compact-card-value">${session.hardItems.length}</div>
+        </button>
+        <button class="compact-card" id="start-failed-btn" ${failedWords.length === 0 ? 'disabled' : ''}>
+          <div class="compact-card-label">Mots<br>ratés</div>
+          <div class="compact-card-value">${failedWords.length}</div>
+        </button>
+      </div>
     </div>
   `;
   if (session.hardItems.length > 0) {
@@ -108,14 +107,14 @@ export async function renderHome(container, { onStartHard, onStartLearning, onSt
 
 // --- Flashcard screens -----------------------------------------------------
 
-function questionCard(area, { prompt, hint, badge, variant = 'question', index, total }) {
+function questionCard(area, { prompt, hint, badge, badgeTone, variant = 'question', index, total }) {
   return new Promise((resolve) => {
-    const body = renderFlashcard(area, { variant, badge, dotsTotal: total, dotsFilled: index });
+    const body = renderFlashcard(area, { variant, badge, badgeTone, dotsTotal: total, dotsFilled: index });
     // enterkeyhint="go" : iOS remplace la touche « retour » par une touche d'action
     // colorée, ce qui permet de valider sans jamais quitter le clavier.
     body.innerHTML = `
-      <p class="prompt">${escapeHtml(prompt)}</p>
-      ${hint ? `<p class="flashcard-hint">${escapeHtml(hint)}</p>` : ''}
+      <div class="q-word">${escapeHtml(prompt)}</div>
+      ${hint ? `<div class="flashcard-hint">${hint}</div>` : ''}
       <input type="text" id="answer-input" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go" />
       <button id="submit-btn" class="btn-primary">Valider</button>
     `;
@@ -133,7 +132,7 @@ function retryCard(area, opts) {
   return questionCard(area, { ...opts, variant: 'retry', badge: opts.badge ?? 'À retenter' });
 }
 
-function resultCard(area, { isCorrect, prompt, expected, tag, example, rule, badge, index, total }) {
+function resultCard(area, { isCorrect, prompt, expected, tag, example, rule, badge, badgeTone, index, total }) {
   return new Promise((resolve) => {
     // Le type de mot n'est plus le badge du haut de la carte : il devient un bloc plein
     // juste sous le mot anglais (voir .word-type). Le badge du haut reste réservé aux
@@ -141,6 +140,7 @@ function resultCard(area, { isCorrect, prompt, expected, tag, example, rule, bad
     const body = renderFlashcard(area, {
       variant: isCorrect ? 'correct' : 'incorrect',
       badge,
+      badgeTone,
       dotsTotal: total,
       dotsFilled: index,
     });
@@ -165,13 +165,15 @@ function discoverCard(area, { prompt, answer, tag, example, index, total }) {
     function render() {
       const body = renderFlashcard(area, { variant: 'discover', badge: 'Nouveau', dotsTotal: total, dotsFilled: index });
       body.innerHTML = flipped ? `
-        <div class="flashcard-word">${escapeHtml(answer)}</div>
-        ${tag ? `<span class="word-type">${escapeHtml(tag)}</span>` : ''}
-        ${example ? `<div class="answer-stack"><div class="answer-block answer-block--example">${escapeHtml(example)}</div></div>` : ''}
+        <div class="discover-prompt">Traduction</div>
+        <div class="discover-answer">${escapeHtml(answer)}</div>
+        ${tag ? `<div style="text-align:center;margin-top:8px"><span class="word-type">${escapeHtml(tag)}</span></div>` : ''}
+        ${example ? `<div class="discover-example">${escapeHtml(example)}</div>` : ''}
         <button id="next-btn" class="btn-primary">Suivant</button>
       ` : `
-        <div class="flashcard-word">${escapeHtml(prompt)}</div>
-        <p>Touche la carte pour voir la traduction</p>
+        <div class="discover-prompt">Nouveau mot</div>
+        <div class="discover-word">${escapeHtml(prompt)}</div>
+        <p class="discover-hint">Touche la carte pour voir la traduction</p>
       `;
       const card = area.querySelector('.flashcard');
       const flip = () => { flipped = !flipped; render(); };
@@ -267,21 +269,24 @@ async function runQuestion(container, item, ctx) {
 
 // "Mots compliqués" — Phase 1: En -> Fr/Meaning, no hint. Phase 2: Fr/Meaning -> En, hangman
 // hint. Phase 3: Fr/Meaning -> En, no hint (same question as the normal circuit).
-// No literal space characters between letters (that reads as a word break) — the letters
-// stay countable via CSS letter-spacing on .flashcard-hint instead, so the only real space
-// characters in the string are genuine word boundaries.
-function maskWord(word) {
-  if (word.length <= 2) return word;
-  return word[0] + '_'.repeat(word.length - 2) + word[word.length - 1];
+// Each letter is a fixed-width slot (shown or hidden) rather than a text underscore, so word
+// boundaries stay visually distinct from letter count — impossible to confuse the two.
+function maskWordHtml(word) {
+  const chars = word.split('');
+  const slots = chars.map((ch, i) => {
+    const shown = chars.length <= 2 || i === 0 || i === chars.length - 1;
+    return `<span class="hint-slot${shown ? ' hint-slot--shown' : ''}">${shown ? escapeHtml(ch) : ''}</span>`;
+  }).join('');
+  return `<span class="hint-word">${slots}</span>`;
 }
 
 // Vocabulaire masks each word of the base translation individually; Grammaire/Expressions
 // mask the whole answer as a single block.
 function maskHint(itemType, text) {
   if (itemType === 'vocabulaire') {
-    return text.split(' ').map(maskWord).join('   ');
+    return text.split(' ').map(maskWordHtml).join('');
   }
-  return maskWord(text);
+  return maskWordHtml(text);
 }
 
 function hardModeQuestion(item, phase) {
@@ -309,12 +314,12 @@ async function runHardModeRound(container, item, targetPhase) {
   while (true) {
     const { prompt, expected, hint, checkFn } = hardModeQuestion(item, targetPhase);
     const badge = `Mots compliqués — Phase ${targetPhase}`;
-    const answer = await questionCard(container, { prompt, hint, badge, index: targetPhase, total: 3 });
+    const answer = await questionCard(container, { prompt, hint, badge, badgeTone: 'tricky', index: targetPhase, total: 3 });
     const isCorrect = checkFn(answer);
 
     if (isCorrect && targetPhase === 3) {
       await gradeHardAttempt(item, 3, true);
-      await resultCard(container, { isCorrect: true, prompt, expected, index: 3, total: 3, badge: 'Sorti du mode compliqué !' });
+      await resultCard(container, { isCorrect: true, prompt, expected, index: 3, total: 3, badge: 'Sorti du mode compliqué !', badgeTone: 'correct' });
       return { done: true };
     }
 

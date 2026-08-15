@@ -4,18 +4,19 @@
 // de progression horizontale de la coque de session prend alors le relais.
 const MAX_DOTS = 15;
 
-export function renderFlashcard(area, { variant, badge, dotsTotal = 0, dotsFilled = 0 }) {
+export function renderFlashcard(area, { variant, badge, badgeTone, dotsTotal = 0, dotsFilled = 0 }) {
   const showDots = dotsTotal > 0 && dotsTotal <= MAX_DOTS;
   const dots = showDots
     ? Array.from({ length: dotsTotal }, (_, i) => (
       `<span class="dot${i < dotsFilled ? ' dot--filled' : ''}"></span>`
     )).join('')
     : '';
+  const badgeClass = `flashcard-badge${badgeTone ? ` flashcard-badge--${badgeTone}` : ''}`;
 
   area.innerHTML = `
     <div class="flashcard flashcard--fill flashcard--${variant}">
       ${showDots ? `<div class="dot-progress">${dots}</div>` : ''}
-      ${badge ? `<span class="flashcard-badge">${badge}</span>` : ''}
+      ${badge ? `<span class="${badgeClass}">${badge}</span>` : ''}
       <div class="flashcard-body"></div>
     </div>
   `;
