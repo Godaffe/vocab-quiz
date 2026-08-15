@@ -321,6 +321,7 @@ async function runHardModeRound(container, item, targetPhase) {
     const result = await gradeHardAttempt(item, targetPhase, isCorrect);
 
     if (isCorrect) {
+      await resultCard(container, { isCorrect: true, prompt, expected, index: targetPhase, total: 3 });
       return { done: false, newPhase: advancedPhase(targetPhase, item.item_type) };
     }
 
