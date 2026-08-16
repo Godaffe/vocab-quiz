@@ -86,13 +86,14 @@ export function answerFieldHtml({ placeholder = 'Ta réponse' } = {}) {
     enterkeyhint="go" inputmode="text" />`;
 }
 
-// Indice masqué : les `revealed` premières lettres apparaissent, le reste devient des
-// créneaux de largeur fixe — la coupure entre les mots reste visible.
-export function hintMaskHtml(answer, revealed = 0) {
-  let seen = 0;
+// Indice masqué : chaque mot montre sa première et sa dernière lettre, le reste devient des
+// créneaux de largeur fixe — la coupure entre les mots reste visible sans compter les
+// caractères. Un mot de 2 lettres ou moins s'affiche en entier (première = dernière sinon).
+export function hintMaskHtml(answer) {
   const words = String(answer).split(/\s+/).map((w) => {
-    const slots = w.split('').map((ch) => {
-      const show = seen++ < revealed;
+    const chars = w.split('');
+    const slots = chars.map((ch, i) => {
+      const show = chars.length <= 2 || i === 0 || i === chars.length - 1;
       return `<span class="ds-hint__slot${show ? ' ds-hint__slot--shown' : ''}">${show ? escapeHtml(ch) : ''}</span>`;
     }).join('');
     return `<span class="ds-hint__word">${slots}</span>`;
@@ -165,6 +166,9 @@ export function onSwipe(el, { onLeft, onRight, onUp } = {}) {
   let tracking = false;
 
   el.addEventListener('pointerdown', (e) => {
+    // Un champ de saisie garde son geste natif (sélection de texte) : un glissement qui y
+    // commence ne doit jamais être confondu avec une action de carte.
+    if (e.target.closest('input, textarea, button')) return;
     tracking = true;
     startX = e.clientX;
     startY = e.clientY;

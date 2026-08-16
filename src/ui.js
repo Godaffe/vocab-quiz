@@ -34,6 +34,13 @@ function wait(ms) {
   return new Promise((resolve) => { setTimeout(resolve, ms); });
 }
 
+// Signal de passage, pas une vraie erreur : glisser vers la droite sur une carte question
+// abandonne l'item en cours, à n'importe quelle tentative. Il traverse askUntilCorrect /
+// runVocabQuestion / runHardModeRound sans que chacun ait à faire suivre un drapeau — la
+// boucle de mode (une seule par écran) l'intercepte et enchaîne sur l'item suivant. Le mot
+// n'est noté nulle part : il reste exactement où sa dernière notation l'avait laissé.
+class ItemSkipped extends Error {}
+
 // --- Accueil ---------------------------------------------------------------
 
 export async function renderHome(container, { onStartHard, onStartLearning, onStartReview, onStartFailedWords }) {
@@ -225,7 +232,8 @@ function discoverCard(area, { word, pos, example, translation, remaining }) {
 
 // Question : champ auto-focus, validation à la touche Entrée ou au bouton. Une mauvaise
 // réponse fait passer le champ au cramoisi avec un écart de 4 px, une seule fois, avant
-// que la carte résultat ne prenne le relais.
+// que la carte résultat ne prenne le relais. Glisser la carte vers la droite (ou le bouton
+// « Passer ») abandonne la question sans la noter — le mot n'avance ni ne recule.
 function questionCard(area, { instruction, question, hint, badge, retry = false, retryLabel, remaining = 0, checkFn }) {
   return new Promise((resolve) => {
     const card = questionCardHtml({
@@ -243,11 +251,14 @@ function questionCard(area, { instruction, question, hint, badge, retry = false,
       </div>
       <div class="session-foot">
         <button type="button" class="ds-btn ds-btn--hero" id="submit-btn">Valider</button>
+        <button type="button" class="ds-btn ds-btn--hero ds-btn--ghost" id="skip-btn">Passer</button>
       </div>
     `;
 
     const input = area.querySelector('#answer-input');
     const button = area.querySelector('#submit-btn');
+    const skipBtn = area.querySelector('#skip-btn');
+    const qcard = area.querySelector('.ds-qcard');
     let settled = false;
 
     const submit = async () => {
@@ -258,11 +269,20 @@ function questionCard(area, { instruction, question, hint, badge, retry = false,
       input.classList.add(isCorrect ? 'ds-field--correct' : 'ds-field--wrong');
       input.blur();
       button.disabled = true;
+      skipBtn.disabled = true;
       await wait(isCorrect ? 240 : 420);
       resolve({ answer, isCorrect });
     };
 
+    const skip = () => {
+      if (settled) return;
+      settled = true;
+      resolve({ skipped: true });
+    };
+
     button.addEventListener('click', submit);
+    skipBtn.addEventListener('click', skip);
+    if (qcard) onSwipe(qcard, { onRight: skip });
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') submit();
     });
@@ -336,8 +356,8 @@ async function askUntilCorrect(container, item, {
   while (true) {
     const retry = forceRetry || attempt > 0;
     // L'indice n'apparaît qu'à la reprise : la première tentative se joue sans filet.
-    const hint = attempt > 0 ? hintMaskHtml(expected, Math.min(2, expected.length)) : '';
-    const { answer, isCorrect } = await questionCard(container, {
+    const hint = attempt > 0 ? hintMaskHtml(expected) : '';
+    const result = await questionCard(container, {
       instruction,
       question,
       badge,
@@ -349,6 +369,8 @@ async function askUntilCorrect(container, item, {
       remaining: Math.max(0, total - index - 1),
       checkFn,
     });
+    if (result.skipped) throw new ItemSkipped();
+    const { answer, isCorrect } = result;
     if (first === null) first = isCorrect;
 
     await resultCard(container, {
@@ -458,7 +480,7 @@ function hardModeQuestion(item, phase) {
       instruction: 'Traduis en anglais',
       question: item.prompt,
       expected: forwardExpected,
-      hint: hintMaskHtml(forwardExpected, Math.min(2, forwardExpected.length)),
+      hint: hintMaskHtml(forwardExpected),
       checkFn: forwardCheck,
     };
   }
@@ -484,13 +506,15 @@ async function runHardModeRound(container, item, targetPhase, tally) {
   while (true) {
     const { instruction, question, expected, hint, checkFn } = hardModeQuestion(item, targetPhase);
     const pos = item.item_type === 'vocabulaire' ? item.type : null;
-    const { answer, isCorrect } = await questionCard(container, {
+    const attemptResult = await questionCard(container, {
       instruction,
       question,
       hint,
       // La phase est déjà nommée par le badge de l'en-tête : pas deux fois sur le même écran.
       checkFn,
     });
+    if (attemptResult.skipped) throw new ItemSkipped();
+    const { answer, isCorrect } = attemptResult;
     tally.answered += 1;
     if (isCorrect) tally.correct += 1;
     else tally.wrong += 1;
@@ -564,9 +588,15 @@ export async function renderHardMode(container, { hardItems }, { onComplete, onE
     const phase = queues[1].length ? 1 : queues[2].length ? 2 : 3;
     setProgress(done, total, { badge: phaseBadge(phase) });
     const item = queues[phase].shift();
-    const outcome = await runHardModeRound(area, item, phase, tally);
-    done = Math.min(done + 1, total - 1);
-    if (!outcome.done) queues[outcome.newPhase].push(item);
+    try {
+      const outcome = await runHardModeRound(area, item, phase, tally);
+      done = Math.min(done + 1, total - 1);
+      if (!outcome.done) queues[outcome.newPhase].push(item);
+    } catch (err) {
+      if (!(err instanceof ItemSkipped)) throw err;
+      // Le mot passé ne revient dans aucune file : il reste exactement où il était.
+      done = Math.min(done + 1, total - 1);
+    }
   }
   onComplete(tally);
 }
@@ -583,7 +613,11 @@ export async function renderLearningMode(container, { newItems }, { onComplete, 
   }
   for (let i = 0; i < newItems.length; i++) {
     setProgress(i, newItems.length);
-    await runQuestion(area, newItems[i], { index: i, total: newItems.length, tally });
+    try {
+      await runQuestion(area, newItems[i], { index: i, total: newItems.length, tally });
+    } catch (err) {
+      if (!(err instanceof ItemSkipped)) throw err;
+    }
   }
   onComplete(tally);
 }
@@ -593,7 +627,11 @@ export async function renderReviewMode(container, { reviewItems }, { onComplete,
   const tally = newTally('review');
   for (let i = 0; i < reviewItems.length; i++) {
     setProgress(i, reviewItems.length);
-    await runQuestion(area, reviewItems[i], { index: i, total: reviewItems.length, tally });
+    try {
+      await runQuestion(area, reviewItems[i], { index: i, total: reviewItems.length, tally });
+    } catch (err) {
+      if (!(err instanceof ItemSkipped)) throw err;
+    }
   }
   onComplete(tally);
 }
@@ -603,9 +641,13 @@ export async function renderFailedWordsMode(container, { failedWords }, { onComp
   const tally = newTally('failed');
   for (let i = 0; i < failedWords.length; i++) {
     setProgress(i, failedWords.length);
-    await runQuestion(area, failedWords[i], {
-      index: i, total: failedWords.length, forceRetry: true, options: { preserveSchedule: true }, tally,
-    });
+    try {
+      await runQuestion(area, failedWords[i], {
+        index: i, total: failedWords.length, forceRetry: true, options: { preserveSchedule: true }, tally,
+      });
+    } catch (err) {
+      if (!(err instanceof ItemSkipped)) throw err;
+    }
   }
   onComplete(tally);
 }
