@@ -15,7 +15,7 @@ const SHEETS = [
     table: 'vocabulaire',
     candidates: ['Voc'],
     required: ['ID', 'Fr', 'En'],
-    fields: ['fr', 'en', 'en_base', 'en_past_simple', 'en_past_participle', 'example', 'type'],
+    fields: ['fr', 'en', 'en_base', 'en_past_simple', 'en_past_participle', 'example', 'type', 'context'],
     mapRow(row) {
       const { base, pastSimple, pastParticiple } = parseIrregularVerb(row.En);
       return {
@@ -26,6 +26,7 @@ const SHEETS = [
         en_past_participle: pastParticiple,
         example: row['Exemple en En'] ? String(row['Exemple en En']).trim() : null,
         type: row.Type ? String(row.Type).trim() : null,
+        context: row.Contexte ? String(row.Contexte).trim() : null,
       };
     },
   },
@@ -33,12 +34,13 @@ const SHEETS = [
     table: 'grammaire',
     candidates: ['Grammaire', 'Gammaire'],
     required: ['ID', 'Fr', 'En'],
-    fields: ['fr', 'en', 'explication'],
+    fields: ['fr', 'en', 'explication', 'context'],
     mapRow(row) {
       return {
         fr: String(row.Fr).trim(),
         en: String(row.En).trim(),
         explication: row.Explication ? String(row.Explication).trim() : null,
+        context: row.Contexte ? String(row.Contexte).trim() : null,
       };
     },
   },
@@ -46,12 +48,13 @@ const SHEETS = [
     table: 'expressions',
     candidates: ['Expressions'],
     required: ['ID', 'En', 'Meaning'],
-    fields: ['en', 'meaning', 'example'],
+    fields: ['en', 'meaning', 'example', 'context'],
     mapRow(row) {
       return {
         en: String(row.En).trim(),
         meaning: String(row.Meaning).trim(),
         example: row['Exemple en En'] ? String(row['Exemple en En']).trim() : null,
+        context: row.Contexte ? String(row.Contexte).trim() : null,
       };
     },
   },

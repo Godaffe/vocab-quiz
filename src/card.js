@@ -41,8 +41,10 @@ export function cardStackHtml(remaining, innerHtml, { stretch = false } = {}) {
 }
 
 // --- carte découverte --------------------------------------------------------
-// Recto : le mot à apprendre, son type et son exemple. Verso : la traduction, seule.
-export function flipCardHtml({ word, pos, example, translation, foot }) {
+// Recto : le mot à apprendre, son type et son exemple. Verso : la traduction, et le
+// contexte s'il désambiguë cette traduction précise (jamais sur le recto : il annote le
+// mot français, pas le mot anglais qu'on introduit).
+export function flipCardHtml({ word, pos, example, translation, context, foot }) {
   return `
     <div class="ds-flip" id="flip-card">
       <div class="ds-flip__inner">
@@ -56,6 +58,7 @@ export function flipCardHtml({ word, pos, example, translation, foot }) {
         <div class="ds-flip__face ds-flip__face--back">
           <span class="ds-prompt">Traduction</span>
           <div class="ds-word ds-word--lg">${escapeHtml(translation)}</div>
+          ${context ? `<div class="ds-context">(${escapeHtml(context)})</div>` : ''}
           <div class="ds-flip__foot">${escapeHtml(foot)}</div>
         </div>
       </div>
@@ -64,7 +67,9 @@ export function flipCardHtml({ word, pos, example, translation, foot }) {
 }
 
 // --- carte question ----------------------------------------------------------
-export function questionCardHtml({ instruction, question, badge = '', hint = '', slot = '', retry = false, retryLabel = 'Deuxième tentative' }) {
+// Le contexte (ex. « au four ») ne s'affiche que sous le mot posé en question : il
+// désambiguë ce qui est demandé, il n'est jamais attendu dans la réponse tapée.
+export function questionCardHtml({ instruction, question, badge = '', hint = '', slot = '', context = '', retry = false, retryLabel = 'Deuxième tentative' }) {
   return `
     <div class="ds-qcard${retry ? ' ds-qcard--retry' : ''}">
       <div class="ds-qcard__head">
@@ -72,6 +77,7 @@ export function questionCardHtml({ instruction, question, badge = '', hint = '',
         ${badge}
       </div>
       <div class="ds-word" style="text-align:center">${escapeHtml(question)}</div>
+      ${context ? `<div class="ds-context">(${escapeHtml(context)})</div>` : ''}
       ${hint ? `<div class="ds-qcard__hint">${hint}</div>` : ''}
       ${slot ? `<div class="ds-qcard__slot">${slot}</div>` : ''}
     </div>
@@ -103,8 +109,10 @@ export function hintMaskHtml(answer) {
 
 // --- carte résultat ----------------------------------------------------------
 // Trois temps de lecture : la bande + le disque (juste ou faux), la réponse attendue en
-// plus gros que tout le reste, puis la traduction et l'exemple en blocs distincts.
-export function resultCardHtml({ correct, answer, pos, translation, example }) {
+// plus gros que tout le reste, puis la traduction et l'exemple en blocs distincts. Le
+// contexte, quand fourni, précise la traduction juste sous elle — l'appelant ne le passe
+// que sur une réponse fausse, pour ne pas répéter ce qui vient déjà d'être vu en question.
+export function resultCardHtml({ correct, answer, pos, translation, context, example }) {
   const deep = correct ? 'var(--green-600)' : 'var(--crimson-600)';
   const mid = correct ? 'var(--green-500)' : 'var(--crimson-500)';
   const soft = correct ? 'var(--green-50)' : 'var(--crimson-50)';
@@ -126,6 +134,7 @@ export function resultCardHtml({ correct, answer, pos, translation, example }) {
         <div class="ds-result__translation" style="background:${deep}">
           <div class="ds-result__blocklabel">Traduction</div>
           <div class="ds-result__blockvalue">${escapeHtml(translation)}</div>
+          ${context ? `<div class="ds-context">(${escapeHtml(context)})</div>` : ''}
         </div>` : ''}
       ${example ? `
         <div class="ds-result__example" style="border-left-color:${mid}">

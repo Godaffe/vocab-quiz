@@ -68,50 +68,52 @@ export async function renderHome(container, { onStartHard, onStartLearning, onSt
       <span class="ds-streak">${icon('flame', { size: 17, color: '#2B1F00', stroke: 2.4 })}<span class="ds-streak__n">${streak}</span><span class="ds-streak__u">j</span></span>
     </div>
 
-    <div class="stat-row">
-      <div class="stat-chip stat-chip--learned">
-        <div class="stat-value">${learnedCount}</div>
-        <div class="stat-label">Mots appris</div>
+    <div class="screen-scroll">
+      <div class="stat-row">
+        <div class="stat-chip stat-chip--learned">
+          <div class="stat-value">${learnedCount}</div>
+          <div class="stat-label">Mots appris</div>
+        </div>
+        <div class="stat-chip">
+          <div class="stat-value">${inProgressCount}</div>
+          <div class="stat-label">Mots en cours</div>
+        </div>
       </div>
-      <div class="stat-chip">
-        <div class="stat-value">${inProgressCount}</div>
-        <div class="stat-label">Mots en cours</div>
-      </div>
-    </div>
 
-    <div class="home-grid">
-      <button class="tile tile--new" id="start-learning-btn" type="button" ${newRemaining === 0 ? 'disabled' : ''}>
-        <span class="tile-label">${icon('sparkles', { size: 16, color: 'currentColor', stroke: 2.4 })}<span>Découverte</span></span>
-        <span class="tile-ring-wrap">
-          <span class="tile-ring" id="new-ring">
-            <span class="tile-ring-in">
-              <span>
-                <span class="tile-ring-n">${introducedToday}</span>
-                <span class="tile-ring-d">sur ${dailyBudget}</span>
+      <div class="home-grid">
+        <button class="tile tile--new" id="start-learning-btn" type="button" ${newRemaining === 0 ? 'disabled' : ''}>
+          <span class="tile-label">${icon('sparkles', { size: 16, color: 'currentColor', stroke: 2.4 })}<span>Découverte</span></span>
+          <span class="tile-ring-wrap">
+            <span class="tile-ring" id="new-ring">
+              <span class="tile-ring-in">
+                <span>
+                  <span class="tile-ring-n">${introducedToday}</span>
+                  <span class="tile-ring-d">sur ${dailyBudget}</span>
+                </span>
               </span>
             </span>
           </span>
-        </span>
-        <span class="tile-title">Mots<br>nouveaux</span>
-        <span class="tile-meta">${newRemaining === 0 ? "Rien de neuf aujourd'hui" : `${newRemaining} mot${newRemaining > 1 ? 's' : ''} restant${newRemaining > 1 ? 's' : ''} aujourd'hui`}</span>
-      </button>
+          <span class="tile-title">Mots<br>nouveaux</span>
+          <span class="tile-meta">${newRemaining === 0 ? "Rien de neuf aujourd'hui" : `${newRemaining} mot${newRemaining > 1 ? 's' : ''} restant${newRemaining > 1 ? 's' : ''} aujourd'hui`}</span>
+        </button>
 
-      <button class="tile tile--review" id="start-review-btn" type="button" ${reviewRemaining === 0 ? 'disabled' : ''}>
-        <span class="tile-label">${icon('repeat', { size: 15, color: 'currentColor', stroke: 2.4 })}<span>À réviser</span></span>
-        <span class="tile-count"><b>${reviewRemaining}</b><span>mot${reviewRemaining > 1 ? 's' : ''}</span></span>
-        <span class="ds-progress"><span class="ds-progress__fill" id="review-fill" style="width:0%"></span></span>
-        <span class="tile-meta">${reviewedToday} sur ${reviewTotal} révisé${reviewedToday > 1 ? 's' : ''} aujourd'hui</span>
-      </button>
+        <button class="tile tile--review" id="start-review-btn" type="button" ${reviewRemaining === 0 ? 'disabled' : ''}>
+          <span class="tile-label">${icon('repeat', { size: 15, color: 'currentColor', stroke: 2.4 })}<span>À réviser</span></span>
+          <span class="tile-count"><b>${reviewRemaining}</b><span>mot${reviewRemaining > 1 ? 's' : ''}</span></span>
+          <span class="ds-progress"><span class="ds-progress__fill" id="review-fill" style="width:0%"></span></span>
+          <span class="tile-meta">${reviewedToday} sur ${reviewTotal} révisé${reviewedToday > 1 ? 's' : ''} aujourd'hui</span>
+        </button>
 
-      <button class="tile tile--flat tile--tricky" id="start-hard-btn" type="button" ${session.hardItems.length === 0 ? 'disabled' : ''}>
-        <span class="tile-title">Mots<br>compliqués</span>
-        <span class="tile-count">${session.hardItems.length}</span>
-      </button>
+        <button class="tile tile--flat tile--tricky" id="start-hard-btn" type="button" ${session.hardItems.length === 0 ? 'disabled' : ''}>
+          <span class="tile-title">Mots<br>compliqués</span>
+          <span class="tile-count">${session.hardItems.length}</span>
+        </button>
 
-      <button class="tile tile--flat tile--failed" id="start-failed-btn" type="button" ${failedWords.length === 0 ? 'disabled' : ''}>
-        <span class="tile-title">Mots<br>ratés</span>
-        <span class="tile-count">${failedWords.length}</span>
-      </button>
+        <button class="tile tile--flat tile--failed" id="start-failed-btn" type="button" ${failedWords.length === 0 ? 'disabled' : ''}>
+          <span class="tile-title">Mots<br>ratés</span>
+          <span class="tile-count">${failedWords.length}</span>
+        </button>
+      </div>
     </div>
   `;
 
@@ -211,11 +213,11 @@ function recordOutcome(tally, before, after, firstCorrect) {
 // retourner (480 ms, la seule animation longue du système), glissement vers le haut pour
 // passer au suivant. Le bouton du bas reste le chemin fiable quand le geste n'est pas
 // disponible (souris, clavier).
-function discoverCard(area, { word, pos, example, translation, remaining }) {
+function discoverCard(area, { word, pos, example, translation, context, remaining }) {
   return new Promise((resolve) => {
     area.innerHTML = `
       <div class="session-body">
-        ${cardStackHtml(remaining, flipCardHtml({ word, pos, example, translation, foot: 'Toucher ou glisser pour retourner' }), { stretch: true })}
+        ${cardStackHtml(remaining, flipCardHtml({ word, pos, example, translation, context, foot: 'Toucher ou glisser pour retourner' }), { stretch: true })}
       </div>
       <div class="session-foot">
         <button type="button" class="ds-btn ds-btn--hero ds-btn--secondary" id="next-btn">Mot suivant</button>
@@ -234,7 +236,7 @@ function discoverCard(area, { word, pos, example, translation, remaining }) {
 // réponse fait passer le champ au cramoisi avec un écart de 4 px, une seule fois, avant
 // que la carte résultat ne prenne le relais. Glisser la carte vers la droite (ou le bouton
 // « Passer ») abandonne la question sans la noter — le mot n'avance ni ne recule.
-function questionCard(area, { instruction, question, hint, badge, retry = false, retryLabel, remaining = 0, checkFn }) {
+function questionCard(area, { instruction, question, hint, badge, context, retry = false, retryLabel, remaining = 0, checkFn }) {
   return new Promise((resolve) => {
     const card = questionCardHtml({
       instruction,
@@ -243,6 +245,7 @@ function questionCard(area, { instruction, question, hint, badge, retry = false,
       retry,
       retryLabel,
       hint: hint || '',
+      context: context || '',
       slot: answerFieldHtml(),
     });
     area.innerHTML = `
@@ -295,11 +298,11 @@ function questionCard(area, { instruction, question, hint, badge, retry = false,
 
 // Résultat : bande + disque, la réponse attendue en plus gros que tout, la traduction et
 // l'exemple en blocs distincts. Sur un échec, la conséquence Leitner est écrite en clair.
-function resultCard(area, { isCorrect, answer, pos, translation, example, consequence, actionLabel }) {
+function resultCard(area, { isCorrect, answer, pos, translation, context, example, consequence, actionLabel }) {
   return new Promise((resolve) => {
     area.innerHTML = `
       <div class="session-body">
-        ${resultCardHtml({ correct: isCorrect, answer, pos, translation, example })}
+        ${resultCardHtml({ correct: isCorrect, answer, pos, translation, context, example })}
         ${consequence ? consequenceHtml(consequence) : ''}
       </div>
       <div class="session-foot">
@@ -319,12 +322,12 @@ function discoverFields(item) {
     const word = item.en_past_simple
       ? `${item.en_base} (${item.en_past_simple} / ${item.en_past_participle})`
       : item.en_base;
-    return { word, pos: item.type, example: item.example, translation: item.prompt };
+    return { word, pos: item.type, example: item.example, translation: item.prompt, context: item.context };
   }
   if (item.item_type === 'grammaire') {
-    return { word: item.en, pos: null, example: item.explication, translation: item.prompt };
+    return { word: item.en, pos: null, example: item.explication, translation: item.prompt, context: item.context };
   }
-  return { word: item.en, pos: null, example: item.example, translation: item.prompt };
+  return { word: item.en, pos: null, example: item.example, translation: item.prompt, context: item.context };
 }
 
 // --- Questions -------------------------------------------------------------
@@ -349,7 +352,7 @@ function failureConsequence(item, answer, { preserveSchedule = false } = {}) {
 // (retournée ici) compte pour la note Leitner — les redemandes suivantes ne sont qu'un
 // entraînement affiché à l'écran, sous la forme d'une carte « deuxième tentative ».
 async function askUntilCorrect(container, item, {
-  instruction, question, expected, pos, example, index, total, badge, forceRetry, options, checkFn,
+  instruction, question, expected, pos, example, context, index, total, badge, forceRetry, options, checkFn,
 }) {
   let first = null;
   let attempt = 0;
@@ -366,6 +369,7 @@ async function askUntilCorrect(container, item, {
       // ratés » c'est un mot déjà tombé une fois.
       retryLabel: attempt > 0 ? 'Deuxième tentative' : 'Mot déjà raté',
       hint,
+      context,
       remaining: Math.max(0, total - index - 1),
       checkFn,
     });
@@ -378,6 +382,9 @@ async function askUntilCorrect(container, item, {
       answer: expected,
       pos,
       translation: `${question} = ${expected}`,
+      // Le contexte a déjà été vu sur la carte question ; sur la carte résultat il ne
+      // revient que si la réponse était fausse, pour expliquer la nuance ratée.
+      context: !isCorrect ? context : null,
       example,
       // Seule la première tentative décide du sort de l'item : c'est la seule qui affiche
       // la conséquence.
@@ -399,6 +406,7 @@ async function runVocabQuestion(container, item, { index, total, badge, options,
     expected: item.en_base,
     pos: item.type,
     example: item.example,
+    context: item.context,
     index, total, badge, forceRetry, options,
     checkFn: (answer) => checkBase(item, answer),
   });
@@ -428,6 +436,7 @@ async function runGrammaireQuestion(container, item, { index, total, badge, opti
     expected: item.en,
     pos: null,
     example: item.explication,
+    context: item.context,
     index, total, badge, forceRetry, options,
     checkFn: (answer) => checkAnswer(item, answer),
   });
@@ -443,6 +452,7 @@ async function runExpressionQuestion(container, item, { index, total, badge, opt
     expected: item.en,
     pos: null,
     example: item.example,
+    context: item.context,
     index, total, badge, forceRetry, options,
     checkFn: (answer) => checkAnswer(item, answer),
   });
@@ -472,6 +482,10 @@ function hardModeQuestion(item, phase) {
       question: forwardExpected,
       expected: item.prompt,
       hint: '',
+      // Le contexte annote le mot français : il ne s'affiche pas ici, où le français est
+      // la réponse à trouver, pas la question posée (voir runHardModeRound pour la carte
+      // résultat, qui peut encore s'en servir sur un échec).
+      context: item.context,
       checkFn: (answer) => checkReverse(item, answer),
     };
   }
@@ -481,6 +495,7 @@ function hardModeQuestion(item, phase) {
       question: item.prompt,
       expected: forwardExpected,
       hint: hintMaskHtml(forwardExpected),
+      context: item.context,
       checkFn: forwardCheck,
     };
   }
@@ -489,6 +504,7 @@ function hardModeQuestion(item, phase) {
     question: item.prompt,
     expected: forwardExpected,
     hint: '',
+    context: item.context,
     checkFn: forwardCheck,
   };
 }
@@ -504,12 +520,15 @@ function phaseBadge(phase) {
 // le trajet 1→2→3 à un item avant de passer au suivant.
 async function runHardModeRound(container, item, targetPhase, tally) {
   while (true) {
-    const { instruction, question, expected, hint, checkFn } = hardModeQuestion(item, targetPhase);
+    const { instruction, question, expected, hint, context, checkFn } = hardModeQuestion(item, targetPhase);
     const pos = item.item_type === 'vocabulaire' ? item.type : null;
     const attemptResult = await questionCard(container, {
       instruction,
       question,
       hint,
+      // Le contexte n'annote que le mot français ; il ne s'affiche sous la question qu'en
+      // phase 2/3, où c'est le français qui est demandé (en phase 1 c'est l'anglais).
+      context: targetPhase === 1 ? null : context,
       // La phase est déjà nommée par le badge de l'en-tête : pas deux fois sur le même écran.
       checkFn,
     });
@@ -556,6 +575,10 @@ async function runHardModeRound(container, item, targetPhase, tally) {
       answer: expected,
       pos,
       translation: `${question} = ${expected}`,
+      // La carte résultat peut porter le contexte même en phase 1 (question anglaise) :
+      // ici le français révélé est la réponse attendue, et le contexte explique pourquoi
+      // c'est précisément celle-là.
+      context,
       example: item.example || item.explication,
       consequence: result.cappedToday
         ? `${typed}trop d'erreurs sur ce mot aujourd'hui : on le retente demain`
@@ -690,7 +713,7 @@ export async function renderSessionRecap(container, tally, { onHome, onReview })
     : ['Appris', tally.learned];
 
   container.innerHTML = `
-    <div class="session-body" style="justify-content:center;gap:16px">
+    <div class="session-body" style="gap:16px">
       <div class="recap-title">Session terminée</div>
       <div class="recap-sub">Tu as répondu à ${tally.answered} ${tally.answered > 1 ? 'questions' : 'question'} en ${formatDuration(Date.now() - tally.started)}.</div>
 
@@ -800,17 +823,19 @@ export function renderProgress(container) {
 
   container.innerHTML = `
     <h1>Progression</h1>
-    <p>${rows.length} item(s) au total.</p>
-    <div class="progress-table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Type</th><th>Prompt</th><th>Niveau</th><th>Prochaine révision</th>
-            <th>Série</th><th>Total</th><th>Dernier résultat</th>
-          </tr>
-        </thead>
-        <tbody>${tableRows}</tbody>
-      </table>
+    <div class="screen-scroll">
+      <p>${rows.length} item(s) au total.</p>
+      <div class="progress-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Type</th><th>Prompt</th><th>Niveau</th><th>Prochaine révision</th>
+              <th>Série</th><th>Total</th><th>Dernier résultat</th>
+            </tr>
+          </thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+      </div>
     </div>
   `;
 }
@@ -837,53 +862,55 @@ export function renderSettings(container) {
   container.innerHTML = `
     <h1>Réglages</h1>
 
-    <div class="ds-section">
-      <div class="ds-section__head">${icon('upload', { size: 18, color: 'var(--copper-600)' })}<span class="ds-section__title">Importer le vocabulaire</span></div>
-      <div class="ds-section__body">
-        <p>Sélectionne ton fichier Excel (.xlsx). Réimporter est sans risque : le contenu est mis à
-        jour, ta progression de révision n'est jamais effacée.</p>
-        <input type="file" id="import-file" accept=".xlsx" />
-        <div id="import-summary"></div>
+    <div class="screen-scroll">
+      <div class="ds-section">
+        <div class="ds-section__head">${icon('upload', { size: 18, color: 'var(--copper-600)' })}<span class="ds-section__title">Importer le vocabulaire</span></div>
+        <div class="ds-section__body">
+          <p>Sélectionne ton fichier Excel (.xlsx). Réimporter est sans risque : le contenu est mis à
+          jour, ta progression de révision n'est jamais effacée.</p>
+          <input type="file" id="import-file" accept=".xlsx" />
+          <div id="import-summary"></div>
+        </div>
       </div>
-    </div>
 
-    <div class="ds-section">
-      <div class="ds-section__head">${icon('sparkles', { size: 18, color: 'var(--copper-600)' })}<span class="ds-section__title">Nouveaux items par jour</span></div>
-      <div class="ds-section__body">
-        <p>Nombre maximum de nouveaux mots/règles/expressions introduits chaque jour, tous types confondus.</p>
-        <input type="number" id="n-input" min="1" step="1" value="${escapeHtml(n)}" />
-        <button type="button" class="ds-btn ds-btn--sm" id="n-save-btn">Enregistrer</button>
-        <div id="n-status"></div>
+      <div class="ds-section">
+        <div class="ds-section__head">${icon('sparkles', { size: 18, color: 'var(--copper-600)' })}<span class="ds-section__title">Nouveaux items par jour</span></div>
+        <div class="ds-section__body">
+          <p>Nombre maximum de nouveaux mots/règles/expressions introduits chaque jour, tous types confondus.</p>
+          <input type="number" id="n-input" min="1" step="1" value="${escapeHtml(n)}" />
+          <button type="button" class="ds-btn ds-btn--sm" id="n-save-btn">Enregistrer</button>
+          <div id="n-status"></div>
+        </div>
       </div>
-    </div>
 
-    <div class="ds-section">
-      <div class="ds-section__head">${icon('download', { size: 18, color: 'var(--copper-600)' })}<span class="ds-section__title">Sauvegarde</span></div>
-      <div class="ds-section__body">
-        <p>Ta progression est stockée uniquement sur cet appareil. Exporte une sauvegarde de temps
-        en temps (par ex. vers Fichiers/iCloud) pour ne rien perdre en cas de problème.</p>
-        <div class="ds-kv"><span>Dernier export</span><span class="ds-kv__v">${escapeHtml(lastExportText)}</span></div>
-        <button type="button" class="ds-btn ds-btn--hero" id="export-btn">Exporter une sauvegarde</button>
+      <div class="ds-section">
+        <div class="ds-section__head">${icon('download', { size: 18, color: 'var(--copper-600)' })}<span class="ds-section__title">Sauvegarde</span></div>
+        <div class="ds-section__body">
+          <p>Ta progression est stockée uniquement sur cet appareil. Exporte une sauvegarde de temps
+          en temps (par ex. vers Fichiers/iCloud) pour ne rien perdre en cas de problème.</p>
+          <div class="ds-kv"><span>Dernier export</span><span class="ds-kv__v">${escapeHtml(lastExportText)}</span></div>
+          <button type="button" class="ds-btn ds-btn--hero" id="export-btn">Exporter une sauvegarde</button>
+        </div>
       </div>
-    </div>
 
-    <div class="ds-section ds-section--danger">
-      <div class="ds-section__head">${icon('triangle-alert', { size: 18, color: 'currentColor' })}<span class="ds-section__title">Restaurer une sauvegarde</span></div>
-      <div class="ds-section__body">
-        <p>La restauration écrase toutes tes données actuelles : mots, niveaux, série et
-        statistiques sont remplacés par le contenu du fichier.</p>
-        <input type="file" id="restore-file" accept=".sqlite" />
-        <div id="restore-status"></div>
+      <div class="ds-section ds-section--danger">
+        <div class="ds-section__head">${icon('triangle-alert', { size: 18, color: 'currentColor' })}<span class="ds-section__title">Restaurer une sauvegarde</span></div>
+        <div class="ds-section__body">
+          <p>La restauration écrase toutes tes données actuelles : mots, niveaux, série et
+          statistiques sont remplacés par le contenu du fichier.</p>
+          <input type="file" id="restore-file" accept=".sqlite" />
+          <div id="restore-status"></div>
+        </div>
       </div>
-    </div>
 
-    <div class="ds-section ds-section--danger">
-      <div class="ds-section__head">${icon('triangle-alert', { size: 18, color: 'currentColor' })}<span class="ds-section__title">Zone de débogage</span></div>
-      <div class="ds-section__body">
-        <p>Efface définitivement tout le contenu et toute la progression actuels, pour repartir
-        d'une base vide (à réimporter ensuite).</p>
-        <button type="button" class="ds-btn ds-btn--hero ds-btn--danger" id="reset-db-btn">Réinitialiser la base de données</button>
-        <div id="reset-db-status"></div>
+      <div class="ds-section ds-section--danger">
+        <div class="ds-section__head">${icon('triangle-alert', { size: 18, color: 'currentColor' })}<span class="ds-section__title">Zone de débogage</span></div>
+        <div class="ds-section__body">
+          <p>Efface définitivement tout le contenu et toute la progression actuels, pour repartir
+          d'une base vide (à réimporter ensuite).</p>
+          <button type="button" class="ds-btn ds-btn--hero ds-btn--danger" id="reset-db-btn">Réinitialiser la base de données</button>
+          <div id="reset-db-status"></div>
+        </div>
       </div>
     </div>
   `;

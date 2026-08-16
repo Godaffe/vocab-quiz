@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS vocabulaire (
   en_past_participle TEXT,
   example TEXT,
   type TEXT NOT NULL,
+  context TEXT,
   updated_at TEXT NOT NULL
 );
 
@@ -23,6 +24,7 @@ CREATE TABLE IF NOT EXISTS grammaire (
   fr TEXT NOT NULL,
   en TEXT NOT NULL,
   explication TEXT,
+  context TEXT,
   updated_at TEXT NOT NULL
 );
 
@@ -32,6 +34,7 @@ CREATE TABLE IF NOT EXISTS expressions (
   en TEXT NOT NULL,
   meaning TEXT NOT NULL,
   example TEXT,
+  context TEXT,
   updated_at TEXT NOT NULL
 );
 
@@ -94,6 +97,19 @@ function migrateProgressColumns() {
   }
 }
 
+// Le contexte disambiguateur (ex. « cuire » -> au four / à la poêle) a été ajouté après coup
+// aux trois tables de contenu — même mécanique de migration idempotente que ci-dessus.
+const CONTENT_TABLES_WITH_CONTEXT = ['vocabulaire', 'grammaire', 'expressions'];
+
+function migrateContentColumns() {
+  for (const table of CONTENT_TABLES_WITH_CONTEXT) {
+    const existingColumns = new Set(db.exec(`PRAGMA table_info(${table})`)[0]?.values.map((row) => row[1]) ?? []);
+    if (!existingColumns.has('context')) {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN context TEXT`);
+    }
+  }
+}
+
 export async function initDb() {
   if (db) return db;
 
@@ -106,6 +122,7 @@ export async function initDb() {
 
   db.exec(SCHEMA);
   migrateProgressColumns();
+  migrateContentColumns();
 
   for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
     db.run('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', [key, value]);
@@ -126,6 +143,7 @@ export async function resetDatabase() {
   db = new SQL.Database();
   db.exec(SCHEMA);
   migrateProgressColumns();
+  migrateContentColumns();
   for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
     db.run('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', [key, value]);
   }
@@ -139,6 +157,7 @@ export async function restoreFromBytes(bytes) {
   db = new SQL.Database(new Uint8Array(bytes));
   db.exec(SCHEMA);
   migrateProgressColumns();
+  migrateContentColumns();
   await save();
   return db;
 }
