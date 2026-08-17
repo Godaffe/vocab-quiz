@@ -14,7 +14,8 @@
   --copper-400: #C96A2E; --copper-500: #B04A0F; --copper-600: #933C09; --copper-700: #722D06; --copper-800: #4F1E03;
 
   /* ---- stone: warm surface + deep-type family ---- */
-  --stone-50: #FAF7EF; --stone-100: #F3EEE0; --stone-700: #433D30; --stone-900: #211F14;
+  --stone-50: #FAF7EF; --stone-100: #F3EEE0; --stone-200: #E4DCC7; --stone-300: #CFC4A9; --stone-400: #A79A80;
+  --stone-500: #7E7460; --stone-600: #5C5443; --stone-700: #433D30; --stone-800: #2E2A20; --stone-900: #211F14;
 
   /* ---- cutting accents, one meaning each ---- */
   --green-50: #E1F2E7; --green-100: #BEE3CB; --green-500: #0F7A4A; --green-600: #0B6039; --green-700: #084A2C;
@@ -247,6 +248,21 @@ input[type="text"]:focus, input[type="number"]:focus {
 }
 /* Deux phases dans une même session : plein = phase en cours, rayé = l'autre. */
 .ds-progress__fill--phase2 { background: repeating-linear-gradient(115deg, var(--gold-400) 0 7px, var(--copper-400) 7px 14px); }
+
+/* Points : une session ≤ 20 questions en affiche un par question plutôt qu'une barre — mêmes
+   teintes que le design system (une seule famille cuivre, la séparation vient de la valeur et
+   de la taille, pas de couleurs qui entrent en concurrence avec vert/cramoisi ailleurs dans
+   l'app). Vide = pas encore atteint, plein clair = réussi, plein foncé = raté (définitif dès la
+   1ère tentative), agrandi + halo = la question en cours. */
+.ds-dots { display: flex; flex-direction: row; flex-wrap: wrap; gap: 8px; justify-content: center; align-items: center; }
+.ds-dot {
+  width: 10px; height: 10px; border-radius: var(--radius-pill); background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--ink-300);
+  transition: background-color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+.ds-dot--done { background: var(--copper-200); box-shadow: inset 0 0 0 1.5px var(--copper-300); }
+.ds-dot--wrong { background: var(--copper-700); box-shadow: inset 0 0 0 1.5px var(--copper-800); }
+.ds-dot--current { background: var(--copper-500); box-shadow: 0 0 0 4px var(--copper-100); transform: scale(1.6); }
 
 .ds-counter { font: 400 13px/1.4 var(--font-mono); letter-spacing: .04em; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 
@@ -584,7 +600,7 @@ input[type="text"]:focus, input[type="number"]:focus {
 
 /* ---------- carte découverte (retournement) ---------- */
 
-.ds-flip { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 300px; perspective: 1400px; touch-action: pan-y; cursor: pointer; }
+.ds-flip { position: relative; display: flex; flex-direction: column; height: 340px; perspective: 1400px; touch-action: none; cursor: pointer; }
 .ds-flip__inner { position: relative; flex: 1; min-height: 0; transform-style: preserve-3d; transition: transform var(--dur-flip) var(--ease-in-out); }
 .ds-flip--back .ds-flip__inner { transform: rotateY(180deg); }
 
@@ -772,9 +788,10 @@ input[type="text"]:focus, input[type="number"]:focus {
 }
 
 /* ---------- bilan — médaille (apprentissage / révision) ---------- */
-/* Le score porte l'écran : anneau plein (toujours 100%, un mot passé ne compte nulle part
-   donc numérateur = dénominateur par construction), coche qui referme le cercle. Aucun
-   détail de notation ici — juste l'objectif atteint. */
+/* Le score porte l'écran : l'anneau ne se remplit que de la part réellement juste sur ce qui
+   a été noté (correct / répondu) — un mot passé ne compte nulle part, mais un mot raté puis
+   corrigé au deuxième essai ne compte pas comme juste ici, seule la première tentative compte.
+   Coche qui referme le cercle. Aucun autre détail de notation ici — juste l'objectif atteint. */
 
 .recap-medal-wrap { display: grid; place-items: center; }
 
@@ -783,10 +800,11 @@ input[type="text"]:focus, input[type="number"]:focus {
   width: 190px;
   height: 190px;
   border-radius: var(--radius-pill);
-  background: conic-gradient(var(--green-500) 0 100%, var(--ink-200) 0);
+  background: conic-gradient(var(--green-500) calc(var(--pct, 100) * 3.6deg), var(--ink-200) 0);
   display: grid;
   place-items: center;
   box-shadow: 0 14px 30px -14px rgba(15, 122, 74, .55);
+  transition: --pct var(--dur-slow) var(--ease-out);
 }
 
 .recap-medal__inner {

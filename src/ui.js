@@ -11,7 +11,7 @@ import {
   countReviewedToday, getProgressRow, getLearnedToday, getStartedToday,
 } from './leitner.js';
 import {
-  escapeHtml, sessionHeaderHtml, cardStackHtml, flipCardHtml, questionCardHtml,
+  escapeHtml, sessionHeaderHtml, barHtml, dotsProgressHtml, cardStackHtml, flipCardHtml, questionCardHtml,
   answerFieldHtml, hintMaskHtml, resultCardHtml, consequenceHtml, statPillHtml, onSwipe, onCardTap,
 } from './card.js';
 import { icon } from './icons.js';
@@ -177,12 +177,12 @@ export async function renderHome(container, { onStartHard, onStartLearning, onSt
     <div class="screen-scroll">
       <div class="stat-row">
         ${statPillHtml({
-          variant: 'home', side: 'left', value: learnedCount, delta: `+${learnedToday}`,
+          variant: 'home', side: 'left', value: learnedCount, delta: learnedToday > 0 ? `+${learnedToday}` : null,
           deltaColor: 'var(--green-100)', label: 'Mots appris',
           glyph: icon('trophy', { size: 17, color: 'var(--green-100)', stroke: 2.2 }),
         })}
         ${statPillHtml({
-          variant: 'home', side: 'right', value: inProgressCount, delta: `+${startedToday}`,
+          variant: 'home', side: 'right', value: inProgressCount, delta: startedToday > 0 ? `+${startedToday}` : null,
           deltaColor: 'var(--copper-100)', label: 'Mots en cours',
           glyph: icon('sprout', { size: 17, color: 'var(--copper-100)', stroke: 2.2 }),
         })}
@@ -249,29 +249,36 @@ export async function renderHome(container, { onStartHard, onStartLearning, onSt
 // puis la zone de carte, qui occupe toute la hauteur restante — c'est ce qui pousse le
 // bouton d'action en bas de l'écran. La nav du bas est masquée le temps de la session
 // (classe sur <body>), retirée par les routes de main.js, par où passent toutes les sorties.
-function renderModeShell(container, onExit) {
+// `useDots` bascule la ligne de progression en points colorés (un par question, voir
+// dotsProgressHtml) — réservé aux sessions d'au plus 20 questions, la barre classique restant
+// plus lisible au-delà. La phase 'discover' garde toujours la barre rayée : rien n'y est encore
+// réussi ni raté, un point n'y aurait rien à montrer.
+function renderModeShell(container, onExit, { total = 0, useDots = false } = {}) {
   container.innerHTML = `
     <div class="mode-shell">
-      ${sessionHeaderHtml({ index: 0, total: 0 })}
+      ${sessionHeaderHtml()}
       <div id="question-area"></div>
     </div>
   `;
   container.querySelector('#exit-btn').addEventListener('click', onExit);
 
-  const fill = container.querySelector('#mode-progress');
   const counter = container.querySelector('#mode-counter');
   const right = container.querySelector('#mode-right');
+  const slot = container.querySelector('#progress-slot');
+  // `null` = pas encore atteint, `true`/`false` = résultat de la 1ère tentative — un mot raté
+  // puis corrigé à la redemande reste rouge, seule la 1ère tentative compte pour la note Leitner.
+  const results = new Array(total).fill(null);
 
-  // phase 'discover' = passage de lecture des nouveaux mots (remplissage rayé), 'quiz' =
-  // passage question/réponse (remplissage plein). Jamais les deux traitements à la fois.
   const setProgress = (index, total, { phase = 'quiz', badge = '' } = {}) => {
     counter.textContent = total > 0 ? `${index + 1} / ${total}` : '';
-    fill.style.width = total > 0 ? `${Math.round((index / total) * 100)}%` : '0%';
-    fill.classList.toggle('ds-progress__fill--phase2', phase === 'discover');
     right.innerHTML = badge;
+    slot.innerHTML = useDots && phase !== 'discover'
+      ? dotsProgressHtml(total, results, index)
+      : barHtml(index, total, phase);
   };
+  const markResult = (idx, correct) => { results[idx] = correct; };
 
-  return { area: container.querySelector('#question-area'), setProgress };
+  return { area: container.querySelector('#question-area'), setProgress, markResult };
 }
 
 // --- Bilan de session ------------------------------------------------------
@@ -314,7 +321,7 @@ function discoverCard(area, { word, pos, example, translation, context, remainin
   return new Promise((resolve) => {
     area.innerHTML = `
       <div class="session-body">
-        ${cardStackHtml(remaining, flipCardHtml({ word, pos, example, translation, context, foot: 'Toucher ou glisser pour retourner' }), { stretch: true })}
+        ${cardStackHtml(remaining, flipCardHtml({ word, pos, example, translation, context, foot: 'Toucher ou glisser pour retourner' }))}
       </div>
       <div class="session-foot">
         <button type="button" class="ds-btn ds-btn--hero ds-btn--secondary" id="next-btn">Mot suivant</button>
@@ -500,7 +507,7 @@ async function askUntilCorrect(container, item, {
   return first;
 }
 
-async function runVocabQuestion(container, item, { index, total, badge, options, forceRetry, tally }) {
+async function runVocabQuestion(container, item, { index, total, badge, options, forceRetry, tally, markResult }) {
   const before = getProgressRow(item.item_type, item.item_key);
 
   const baseCorrect = await askUntilCorrect(container, item, {
@@ -528,10 +535,12 @@ async function runVocabQuestion(container, item, { index, total, badge, options,
   }
 
   await finalizeVocabItem(item, baseCorrect, conjugationCorrect, options);
-  recordOutcome(tally, before, getProgressRow(item.item_type, item.item_key), baseCorrect && conjugationCorrect);
+  const correct = baseCorrect && conjugationCorrect;
+  recordOutcome(tally, before, getProgressRow(item.item_type, item.item_key), correct);
+  markResult?.(index, correct);
 }
 
-async function runGrammaireQuestion(container, item, { index, total, badge, options, forceRetry, tally }) {
+async function runGrammaireQuestion(container, item, { index, total, badge, options, forceRetry, tally, markResult }) {
   const before = getProgressRow(item.item_type, item.item_key);
   const isCorrect = await askUntilCorrect(container, item, {
     instruction: 'Traduis en anglais',
@@ -545,9 +554,10 @@ async function runGrammaireQuestion(container, item, { index, total, badge, opti
   });
   await finalizeItem(item, isCorrect, options);
   recordOutcome(tally, before, getProgressRow(item.item_type, item.item_key), isCorrect);
+  markResult?.(index, isCorrect);
 }
 
-async function runExpressionQuestion(container, item, { index, total, badge, options, forceRetry, tally }) {
+async function runExpressionQuestion(container, item, { index, total, badge, options, forceRetry, tally, markResult }) {
   const before = getProgressRow(item.item_type, item.item_key);
   const isCorrect = await askUntilCorrect(container, item, {
     instruction: "Trouve l'expression",
@@ -561,6 +571,7 @@ async function runExpressionQuestion(container, item, { index, total, badge, opt
   });
   await finalizeItem(item, isCorrect, options);
   recordOutcome(tally, before, getProgressRow(item.item_type, item.item_key), isCorrect);
+  markResult?.(index, isCorrect);
 }
 
 async function runQuestion(container, item, ctx) {
@@ -702,7 +713,9 @@ async function runHardModeRound(container, item, targetPhase, tally) {
 // toujours vidée en premier à chaque tour, si bien qu'un item redescendu en phase 1 (échec
 // en phase 2) y repasse avant les items restants en phase 2/3, comme n'importe quel autre.
 export async function renderHardMode(container, { hardItems }, { onComplete, onExit }) {
-  const { area, setProgress } = renderModeShell(container, onExit);
+  // Toujours la barre classique : le total compte les franchissements de phase (un mot en
+  // traverse 3), pas les mots eux-mêmes — des points n'y représenteraient rien de lisible.
+  const { area, setProgress } = renderModeShell(container, onExit, { total: hardItems.length * 3, useDots: false });
   const tally = newTally('hard');
   const queues = { 1: [], 2: [], 3: [] };
   for (const item of hardItems) queues[item.hard_phase].push(item);
@@ -729,10 +742,12 @@ export async function renderHardMode(container, { hardItems }, { onComplete, onE
 }
 
 export async function renderLearningMode(container, { newItems }, { onComplete, onExit }) {
-  const { area, setProgress } = renderModeShell(container, onExit);
+  const useDots = newItems.length > 0 && newItems.length <= 20;
+  const { area, setProgress, markResult } = renderModeShell(container, onExit, { total: newItems.length, useDots });
   const tally = newTally('learning');
   // Deux passages, chacun reparti de zéro : la lecture des nouveaux mots (remplissage
-  // rayé), puis la phase question/réponse (remplissage plein).
+  // rayé, jamais de points), puis la phase question/réponse (points si la session tient en
+  // 20 mots, barre classique sinon).
   for (let i = 0; i < newItems.length; i++) {
     setProgress(i, newItems.length, { phase: 'discover' });
     const fields = discoverFields(newItems[i]);
@@ -741,7 +756,7 @@ export async function renderLearningMode(container, { newItems }, { onComplete, 
   for (let i = 0; i < newItems.length; i++) {
     setProgress(i, newItems.length);
     try {
-      await runQuestion(area, newItems[i], { index: i, total: newItems.length, tally });
+      await runQuestion(area, newItems[i], { index: i, total: newItems.length, tally, markResult });
     } catch (err) {
       if (!(err instanceof ItemSkipped)) throw err;
     }
@@ -750,12 +765,13 @@ export async function renderLearningMode(container, { newItems }, { onComplete, 
 }
 
 export async function renderReviewMode(container, { reviewItems }, { onComplete, onExit }) {
-  const { area, setProgress } = renderModeShell(container, onExit);
+  const useDots = reviewItems.length > 0 && reviewItems.length <= 20;
+  const { area, setProgress, markResult } = renderModeShell(container, onExit, { total: reviewItems.length, useDots });
   const tally = newTally('review');
   for (let i = 0; i < reviewItems.length; i++) {
     setProgress(i, reviewItems.length);
     try {
-      await runQuestion(area, reviewItems[i], { index: i, total: reviewItems.length, tally });
+      await runQuestion(area, reviewItems[i], { index: i, total: reviewItems.length, tally, markResult });
     } catch (err) {
       if (!(err instanceof ItemSkipped)) throw err;
     }
@@ -764,13 +780,14 @@ export async function renderReviewMode(container, { reviewItems }, { onComplete,
 }
 
 export async function renderFailedWordsMode(container, { failedWords }, { onComplete, onExit }) {
-  const { area, setProgress } = renderModeShell(container, onExit);
+  const useDots = failedWords.length > 0 && failedWords.length <= 20;
+  const { area, setProgress, markResult } = renderModeShell(container, onExit, { total: failedWords.length, useDots });
   const tally = newTally('failed');
   for (let i = 0; i < failedWords.length; i++) {
     setProgress(i, failedWords.length);
     try {
       await runQuestion(area, failedWords[i], {
-        index: i, total: failedWords.length, forceRetry: true, options: { preserveSchedule: true }, tally,
+        index: i, total: failedWords.length, forceRetry: true, options: { preserveSchedule: true }, tally, markResult,
       });
     } catch (err) {
       if (!(err instanceof ItemSkipped)) throw err;
@@ -800,14 +817,15 @@ async function renderRecapMedal(container, tally, onHome) {
   const today = todayISO();
   const learnedCount = getLearnedCount();
   const learnedToday = getLearnedToday(today);
+  const pct = tally.answered > 0 ? Math.round((tally.correct / tally.answered) * 100) : 100;
 
   container.innerHTML = `
     <div class="session-body" style="gap:22px">
       <div class="recap-medal-wrap">
-        <div class="recap-medal">
+        <div class="recap-medal" id="recap-ring">
           <div class="recap-medal__inner">
-            <div class="recap-medal__n">${tally.answered}</div>
-            <div class="recap-medal__d">/ ${tally.answered} MOTS</div>
+            <div class="recap-medal__n">${tally.correct}</div>
+            <div class="recap-medal__d">/ ${tally.answered} MOT${tally.answered > 1 ? 'S' : ''}</div>
           </div>
           <span class="recap-medal__check">${icon('check', { size: 26, color: '#FAF7EF', stroke: 3 })}</span>
         </div>
@@ -819,7 +837,7 @@ async function renderRecapMedal(container, tally, onHome) {
       </div>
 
       ${statPillHtml({
-        variant: 'recap', value: learnedCount, delta: `+${learnedToday}`,
+        variant: 'recap', value: learnedCount, delta: learnedToday > 0 ? `+${learnedToday}` : null,
         deltaColor: 'var(--green-400)', label: 'Mots appris au total',
       })}
     </div>
@@ -827,6 +845,17 @@ async function renderRecapMedal(container, tally, onHome) {
       <button type="button" class="ds-btn ds-btn--hero" id="recap-home">Retour à l'accueil</button>
     </div>
   `;
+  // Même mécanique qu'à l'accueil : l'anneau part de zéro puis se remplit à la vraie
+  // proportion de bonnes réponses, jamais un 100 % de façade. requestAnimationFrame ne se
+  // déclenche pas sur une page masquée — le minuteur reprend la main.
+  let ringPainted = false;
+  const paintRing = () => {
+    if (ringPainted) return;
+    ringPainted = true;
+    container.querySelector('#recap-ring')?.style.setProperty('--pct', String(pct));
+  };
+  requestAnimationFrame(paintRing);
+  setTimeout(paintRing, 250);
   container.querySelector('#recap-home').addEventListener('click', onHome);
 }
 

@@ -10,22 +10,45 @@ export function escapeHtml(str) {
 }
 
 // --- en-tête de session ------------------------------------------------------
-// Quitter à gauche, compteur au centre, emplacement libre à droite (badge de phase),
-// puis la barre de progression sur toute la largeur.
-export function sessionHeaderHtml({ index, total, phase = 1, right = '' }) {
-  const pct = total > 0 ? Math.max(0, Math.min(100, ((index - 1) / total) * 100)) : 0;
+// Quitter à gauche, compteur au centre, emplacement libre à droite (badge de phase), puis un
+// emplacement de progression que renderModeShell remplace entièrement à chaque question — barre
+// classique ou points, voir barHtml / dotsProgressHtml.
+export function sessionHeaderHtml() {
   return `
     <div class="ds-sessionbar">
       <button id="exit-btn" class="ds-exit" aria-label="Quitter la session">✕</button>
-      <span class="ds-counter" id="mode-counter">${total > 0 ? `${index} / ${total}` : ''}</span>
-      <span class="ds-sessionbar__right" id="mode-right">${right}</span>
+      <span class="ds-counter" id="mode-counter"></span>
+      <span class="ds-sessionbar__right" id="mode-right"></span>
     </div>
-    <div class="session-progress">
-      <div class="ds-progress" role="progressbar" aria-valuenow="${index - 1}" aria-valuemin="0" aria-valuemax="${total}">
-        <div class="ds-progress__fill${phase === 2 ? ' ds-progress__fill--phase2' : ''}" id="mode-progress" style="width:${pct}%"></div>
-      </div>
+    <div class="session-progress" id="progress-slot"></div>
+  `;
+}
+
+// Barre classique : remplissage plein en question, rayé en lecture (deux passages d'une même
+// session, jamais les deux traitements à la fois).
+export function barHtml(index, total, phase) {
+  const pct = total > 0 ? Math.round((index / total) * 100) : 0;
+  return `
+    <div class="ds-progress" role="progressbar" aria-valuenow="${index}" aria-valuemin="0" aria-valuemax="${total}">
+      <div class="ds-progress__fill${phase === 'discover' ? ' ds-progress__fill--phase2' : ''}" style="width:${pct}%"></div>
     </div>
   `;
+}
+
+// Points : un par question, colorés par ce qui leur est réellement arrivé — jamais recalculés
+// depuis la position courante seule. `results[i]` est `true` (juste du premier coup), `false`
+// (raté — reste rouge même si corrigé à une redemande, seule la 1ère tentative compte pour la
+// note Leitner) ou `null` (pas encore atteint). Réservé aux sessions ≤ 20 questions : au-delà,
+// la barre classique reste plus lisible qu'un mur de points.
+export function dotsProgressHtml(total, results, currentIndex) {
+  const dots = Array.from({ length: total }, (_, i) => {
+    let cls = 'ds-dot';
+    if (i === currentIndex) cls += ' ds-dot--current';
+    else if (results[i] === true) cls += ' ds-dot--done';
+    else if (results[i] === false) cls += ' ds-dot--wrong';
+    return `<span class="${cls}"></span>`;
+  }).join('');
+  return `<div class="ds-dots">${dots}</div>`;
 }
 
 // --- pile de cartes ----------------------------------------------------------
