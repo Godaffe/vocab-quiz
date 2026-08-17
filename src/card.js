@@ -67,7 +67,7 @@ export function cardStackHtml(remaining, innerHtml, { stretch = false } = {}) {
 // Recto : le mot à apprendre, son type et son exemple. Verso : la traduction, et le
 // contexte s'il désambiguë cette traduction précise (jamais sur le recto : il annote le
 // mot français, pas le mot anglais qu'on introduit).
-export function flipCardHtml({ word, pos, example, translation, context, foot }) {
+export function flipCardHtml({ word, pos, example, translation, context, registre, sens, usage, foot }) {
   return `
     <div class="ds-flip" id="flip-card">
       <div class="ds-flip__inner">
@@ -82,11 +82,23 @@ export function flipCardHtml({ word, pos, example, translation, context, foot })
           <span class="ds-prompt">Traduction</span>
           <div class="ds-word ds-word--lg">${escapeHtml(translation)}</div>
           ${context ? `<div class="ds-context">(${escapeHtml(context)})</div>` : ''}
+          ${wordInfoHtml({ registre, sens, usage })}
           <div class="ds-flip__foot">${escapeHtml(foot)}</div>
         </div>
       </div>
     </div>
   `;
+}
+
+// Bloc de précisions sur le mot français : registre (soutenu/normal/familier, en pastille),
+// puis sens (nuance de traduction) et usage (construction grammaticale), chacun affiché
+// seulement s'il est renseigné dans le classeur — jamais dans la réponse attendue.
+function wordInfoHtml({ registre, sens, usage }) {
+  if (!registre && !sens && !usage) return '';
+  const registreBadge = registre ? `<span class="ds-badge ds-wordinfo__register">${escapeHtml(registre)}</span>` : '';
+  const sensRow = sens ? `<div class="ds-wordinfo__row"><span class="ds-wordinfo__label">Sens</span><span class="ds-wordinfo__text">${escapeHtml(sens)}</span></div>` : '';
+  const usageRow = usage ? `<div class="ds-wordinfo__row"><span class="ds-wordinfo__label">Usage</span><span class="ds-wordinfo__text">${escapeHtml(usage)}</span></div>` : '';
+  return `<div class="ds-wordinfo">${registreBadge}${sensRow}${usageRow}</div>`;
 }
 
 // --- carte question ----------------------------------------------------------
@@ -135,7 +147,7 @@ export function hintMaskHtml(answer) {
 // plus gros que tout le reste, puis la traduction et l'exemple en blocs distincts. Le
 // contexte, quand fourni, précise la traduction juste sous elle — l'appelant ne le passe
 // que sur une réponse fausse, pour ne pas répéter ce qui vient déjà d'être vu en question.
-export function resultCardHtml({ correct, answer, pos, translation, context, example }) {
+export function resultCardHtml({ correct, answer, pos, translation, context, registre, sens, usage, example }) {
   const deep = correct ? 'var(--green-600)' : 'var(--crimson-600)';
   const mid = correct ? 'var(--green-500)' : 'var(--crimson-500)';
   const soft = correct ? 'var(--green-50)' : 'var(--crimson-50)';
@@ -158,6 +170,7 @@ export function resultCardHtml({ correct, answer, pos, translation, context, exa
           <div class="ds-result__blocklabel">Traduction</div>
           <div class="ds-result__blockvalue">${escapeHtml(translation)}</div>
           ${context ? `<div class="ds-context">(${escapeHtml(context)})</div>` : ''}
+          ${wordInfoHtml({ registre, sens, usage })}
         </div>` : ''}
       ${example ? `
         <div class="ds-result__example" style="border-left-color:${mid}">

@@ -673,6 +673,21 @@ input[type="text"]:focus, input[type="number"]:focus {
    une précision affichée sous le mot posé en question. */
 .ds-context { font: 500 13px/1.4 var(--font-ui); color: var(--text-muted); margin-top: 4px; text-align: center; }
 
+/* Précisions sur le mot français : registre (pastille), puis sens et usage (lignes étiquetées),
+   empilés dans cet ordre — chacun affiché seulement s'il est renseigné dans le classeur. Encadré
+   distinct sous le mot français (verso de la découverte, bloc traduction du résultat), jamais
+   dans la réponse attendue. Le résultat l'affiche sur le fond sombre du verdict, d'où la
+   variante de couleurs imbriquée. */
+.ds-wordinfo { margin-top: 10px; padding: 11px 13px; width: 100%; text-align: left; display: flex; flex-direction: column; gap: 7px; background: var(--surface-sunken); border-radius: var(--radius-md); box-shadow: inset 0 0 0 1px var(--ink-300); }
+.ds-wordinfo__register { align-self: flex-start; }
+.ds-wordinfo__row { display: flex; flex-direction: column; gap: 2px; }
+.ds-wordinfo__label { font: 600 10px/1 var(--font-ui); letter-spacing: .1em; text-transform: uppercase; color: var(--text-faint); }
+.ds-wordinfo__text { font: 400 13px/1.5 var(--font-ui); color: var(--text-body); }
+.ds-result__translation .ds-wordinfo { background: rgba(255, 255, 255, .14); box-shadow: none; }
+.ds-result__translation .ds-wordinfo__register { background: rgba(255, 255, 255, .22); color: #fff; }
+.ds-result__translation .ds-wordinfo__label { color: rgba(255, 255, 255, .72); }
+.ds-result__translation .ds-wordinfo__text { color: rgba(255, 255, 255, .92); }
+
 /* Indice masqué : les lettres révélées s'affichent, les autres restent des créneaux de
    largeur fixe — les limites de mots restent lisibles sans compter des tirets. */
 .ds-hint { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; align-items: flex-end; }

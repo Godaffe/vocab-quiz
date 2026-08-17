@@ -219,13 +219,15 @@ export function demotedPhase(currentPhase, itemType) {
 // column counts) — unused fields per type are padded with NULL.
 const CONTENT_QUERIES = {
   vocabulaire: `SELECT 'vocabulaire' as item_type, key as item_key, fr as prompt, en_base, en_past_simple,
-                       en_past_participle, example, type, NULL as explication, NULL as en, context
+                       en_past_participle, example, type, NULL as explication, NULL as en, context, registre, sens, usage
                 FROM vocabulaire`,
   grammaire: `SELECT 'grammaire' as item_type, key as item_key, fr as prompt, NULL as en_base, NULL as en_past_simple,
-                     NULL as en_past_participle, NULL as example, NULL as type, explication, en, context
+                     NULL as en_past_participle, NULL as example, NULL as type, explication, en, context,
+                     NULL as registre, NULL as sens, NULL as usage
               FROM grammaire`,
   expressions: `SELECT 'expressions' as item_type, key as item_key, meaning as prompt, NULL as en_base, NULL as en_past_simple,
-                       NULL as en_past_participle, example, NULL as type, NULL as explication, en, context
+                       NULL as en_past_participle, example, NULL as type, NULL as explication, en, context,
+                       NULL as registre, NULL as sens, NULL as usage
                 FROM expressions`,
 };
 

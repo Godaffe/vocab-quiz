@@ -317,11 +317,11 @@ function recordOutcome(tally, before, after, firstCorrect) {
 // retourner (480 ms, la seule animation longue du système), glissement vers le haut pour
 // passer au suivant. Le bouton du bas reste le chemin fiable quand le geste n'est pas
 // disponible (souris, clavier).
-function discoverCard(area, { word, pos, example, translation, context, remaining }) {
+function discoverCard(area, { word, pos, example, translation, context, registre, sens, usage, remaining }) {
   return new Promise((resolve) => {
     area.innerHTML = `
       <div class="session-body">
-        ${cardStackHtml(remaining, flipCardHtml({ word, pos, example, translation, context, foot: 'Toucher ou glisser pour retourner' }))}
+        ${cardStackHtml(remaining, flipCardHtml({ word, pos, example, translation, context, registre, sens, usage, foot: 'Toucher ou glisser pour retourner' }))}
       </div>
       <div class="session-foot">
         <button type="button" class="ds-btn ds-btn--hero ds-btn--secondary" id="next-btn">Mot suivant</button>
@@ -402,7 +402,7 @@ function questionCard(area, { instruction, question, hint, badge, context, retry
 
 // Résultat : bande + disque, la réponse attendue en plus gros que tout, la traduction et
 // l'exemple en blocs distincts. Sur un échec, la conséquence Leitner est écrite en clair.
-function resultCard(area, { isCorrect, answer, pos, translation, context, example, consequence, actionLabel }) {
+function resultCard(area, { isCorrect, answer, pos, translation, context, registre, sens, usage, example, consequence, actionLabel }) {
   // Un texte simple reste une note de réussite (ex. sortie des mots compliqués) — la
   // pastille avant/après barrée est réservée aux échecs, elle n'aurait pas de sens ici.
   const consequenceBlock = !consequence ? ''
@@ -411,7 +411,7 @@ function resultCard(area, { isCorrect, answer, pos, translation, context, exampl
   return new Promise((resolve) => {
     area.innerHTML = `
       <div class="session-body">
-        ${resultCardHtml({ correct: isCorrect, answer, pos, translation, context, example })}
+        ${resultCardHtml({ correct: isCorrect, answer, pos, translation, context, registre, sens, usage, example })}
         ${consequenceBlock}
       </div>
       <div class="session-foot">
@@ -431,7 +431,10 @@ function discoverFields(item) {
     const word = item.en_past_simple
       ? `${item.en_base} (${item.en_past_simple} / ${item.en_past_participle})`
       : item.en_base;
-    return { word, pos: item.type, example: item.example, translation: item.prompt, context: item.context };
+    return {
+      word, pos: item.type, example: item.example, translation: item.prompt, context: item.context,
+      registre: item.registre, sens: item.sens, usage: item.usage,
+    };
   }
   if (item.item_type === 'grammaire') {
     return { word: item.en, pos: null, example: item.explication, translation: item.prompt, context: item.context };
@@ -462,7 +465,7 @@ function failureConsequence(item, answer, { preserveSchedule = false } = {}) {
 // (retournée ici) compte pour la note Leitner — les redemandes suivantes ne sont qu'un
 // entraînement affiché à l'écran, sous la forme d'une carte « deuxième tentative ».
 async function askUntilCorrect(container, item, {
-  instruction, question, expected, pos, example, context, index, total, badge, forceRetry, options, checkFn,
+  instruction, question, expected, pos, example, context, registre, sens, usage, index, total, badge, forceRetry, options, checkFn,
 }) {
   let first = null;
   let attempt = 0;
@@ -493,8 +496,12 @@ async function askUntilCorrect(container, item, {
       pos,
       translation: `${question} = ${expected}`,
       // Le contexte a déjà été vu sur la carte question ; sur la carte résultat il ne
-      // revient que si la réponse était fausse, pour expliquer la nuance ratée.
+      // revient que si la réponse était fausse, pour expliquer la nuance ratée. Registre/sens/
+      // usage ne sont pas liés à un échec — ils restent utiles même sur une bonne réponse.
       context: !isCorrect ? context : null,
+      registre,
+      sens,
+      usage,
       example,
       // Seule la première tentative décide du sort de l'item : c'est la seule qui affiche
       // la conséquence.
@@ -517,6 +524,9 @@ async function runVocabQuestion(container, item, { index, total, badge, options,
     pos: item.type,
     example: item.example,
     context: item.context,
+    registre: item.registre,
+    sens: item.sens,
+    usage: item.usage,
     index, total, badge, forceRetry, options,
     checkFn: (answer) => checkBase(item, answer),
   });

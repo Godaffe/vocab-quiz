@@ -15,6 +15,9 @@ CREATE TABLE IF NOT EXISTS vocabulaire (
   example TEXT,
   type TEXT NOT NULL,
   context TEXT,
+  registre TEXT,
+  sens TEXT,
+  usage TEXT,
   updated_at TEXT NOT NULL
 );
 
@@ -106,6 +109,15 @@ function migrateContentColumns() {
     const existingColumns = new Set(db.exec(`PRAGMA table_info(${table})`)[0]?.values.map((row) => row[1]) ?? []);
     if (!existingColumns.has('context')) {
       db.exec(`ALTER TABLE ${table} ADD COLUMN context TEXT`);
+    }
+  }
+  // Registre (soutenu/normal/familier), Sens (nuance de traduction) et Usage (construction
+  // grammaticale) remplacent le contexte disambiguateur pour le vocabulaire — colonnes
+  // Registre/Sens/Utilisation du classeur, n'existent que pour cette table.
+  const vocabColumns = new Set(db.exec('PRAGMA table_info(vocabulaire)')[0]?.values.map((row) => row[1]) ?? []);
+  for (const column of ['usage', 'registre', 'sens']) {
+    if (!vocabColumns.has(column)) {
+      db.exec(`ALTER TABLE vocabulaire ADD COLUMN ${column} TEXT`);
     }
   }
 }
