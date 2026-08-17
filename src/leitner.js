@@ -38,6 +38,32 @@ export function getStreak() {
   return parseInt(getSetting('streak_count') ?? '0', 10);
 }
 
+// Deltas du jour affichés sur l'accueil (« +N » à côté des totaux) : deux compteurs datés,
+// remis à zéro implicitement dès que la date stockée diffère d'aujourd'hui — même mécanique
+// que bumpStreak/getStreak, appelés depuis gradeAnswer au moment exact du franchissement.
+function bumpDailyCounter(counterKey, dateKey, todayISO) {
+  const day = getSetting(dateKey);
+  const count = day === todayISO ? parseInt(getSetting(counterKey) ?? '0', 10) + 1 : 1;
+  run(
+    `INSERT INTO settings (key, value) VALUES ('${dateKey}', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    [todayISO]
+  );
+  run(
+    `INSERT INTO settings (key, value) VALUES ('${counterKey}', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    [String(count)]
+  );
+}
+
+function getDailyCounter(counterKey, dateKey, todayISO) {
+  return getSetting(dateKey) === todayISO ? parseInt(getSetting(counterKey) ?? '0', 10) : 0;
+}
+
+const bumpLearnedToday = (todayISO) => bumpDailyCounter('learned_today_count', 'learned_today_date', todayISO);
+export const getLearnedToday = (todayISO) => getDailyCounter('learned_today_count', 'learned_today_date', todayISO);
+
+const bumpStartedToday = (todayISO) => bumpDailyCounter('started_today_count', 'started_today_date', todayISO);
+export const getStartedToday = (todayISO) => getDailyCounter('started_today_count', 'started_today_date', todayISO);
+
 // Finds the earliest future day that still has room in the daily new-word budget, cascading
 // forward day by day when a day is already full of scheduled requeues (review failures and
 // "mots compliqués" graduates share this same daily cap).
@@ -59,6 +85,9 @@ export async function gradeAnswer(itemType, itemKey, isCorrect, todayISO, { pres
   // re-stamped as introduced today too, so they count against today's new-word budget like a
   // real new item.
   const introducedAt = (row.total_reviews === 0 || row.requeue_date) ? todayISO : row.introduced_at;
+  // Ce grading est le tout premier de l'item — il bascule dans "en cours" à l'instant même,
+  // quel que soit le résultat (même une première réponse fausse compte comme démarré).
+  if (row.total_reviews === 0) bumpStartedToday(todayISO);
   let boxLevel, isLearned, nextReviewDate, correctStreak, requeueDate;
 
   const consecutiveFailures = isCorrect ? 0 : row.consecutive_failures + 1;
@@ -77,6 +106,9 @@ export async function gradeAnswer(itemType, itemKey, isCorrect, todayISO, { pres
     nextReviewDate = learned ? null : addDays(todayISO, LEVEL_INTERVAL_DAYS[level]);
     correctStreak = row.correct_streak + 1;
     requeueDate = null;
+    // Franchissement 0 -> 1 de is_learned uniquement : un mot déjà appris qui revient en
+    // renforcement (getLearnedSample) ne doit pas regonfler le delta du jour.
+    if (learned && !row.is_learned) bumpLearnedToday(todayISO);
   } else if (preserveSchedule) {
     // Retry volontaire depuis "Réviser mes mots ratés" : reste au niveau 0, échéance inchangée.
     boxLevel = row.box_level;

@@ -8,11 +8,11 @@ import { exportToFile, importFromFile, daysSince } from './backup.js';
 import {
   getAllProgress, advancedPhase, demotedPhase, getFailedWordsPool,
   getStreak, getLearnedCount, getInProgressCount, countNewIntroducedToday,
-  countReviewedToday, getProgressRow,
+  countReviewedToday, getProgressRow, getLearnedToday, getStartedToday,
 } from './leitner.js';
 import {
   escapeHtml, sessionHeaderHtml, cardStackHtml, flipCardHtml, questionCardHtml,
-  answerFieldHtml, hintMaskHtml, resultCardHtml, consequenceHtml, onSwipe, onCardTap,
+  answerFieldHtml, hintMaskHtml, resultCardHtml, consequenceHtml, statPillHtml, onSwipe, onCardTap,
 } from './card.js';
 import { icon } from './icons.js';
 
@@ -26,8 +26,12 @@ const MONTHS = [
   'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre',
 ];
 
-function formatDayFr(date) {
-  return `${WEEKDAYS[date.getDay()]} ${date.getDate()} ${MONTHS[date.getMonth()]}`;
+function formatWeekdayFr(date) {
+  return WEEKDAYS[date.getDay()];
+}
+
+function formatDateFrLong(date) {
+  return `${date.getDate()} ${MONTHS[date.getMonth()]}`;
 }
 
 function wait(ms) {
@@ -43,75 +47,168 @@ class ItemSkipped extends Error {}
 
 // --- Accueil ---------------------------------------------------------------
 
+// Recto de la tuile Découverte : l'anneau du jour, actif tant qu'il reste des mots.
+function newTileActiveHtml({ introducedToday, dailyBudget, newRemaining }) {
+  return `
+    <span class="tile-label">${icon('sparkles', { size: 16, color: 'currentColor', stroke: 2.4 })}<span>Découverte</span></span>
+    <span class="tile-ring-wrap">
+      <span class="tile-ring" id="new-ring">
+        <span class="tile-ring-in">
+          <span>
+            <span class="tile-ring-n">${introducedToday}</span>
+            <span class="tile-ring-d">sur ${dailyBudget}</span>
+          </span>
+        </span>
+      </span>
+    </span>
+    <span class="tile-title">Mots<br>nouveaux</span>
+    <span class="tile-meta">${newRemaining} mot${newRemaining > 1 ? 's' : ''} restant${newRemaining > 1 ? 's' : ''} aujourd'hui</span>
+  `;
+}
+
+// Découverte bouclée : le disque remplace l'anneau, le compte est ce qui a réellement été
+// découvert aujourd'hui — pas l'objectif du réglage, qui peut ne pas être atteignable si le
+// classeur importé n'a plus assez de mots neufs à proposer.
+function newTileDoneHtml({ introducedToday }) {
+  return `
+    <span class="tile-label">Découverte</span>
+    <span class="tile-disc-wrap">
+      <span class="tile-disc">
+        <span class="tile-disc__n">${introducedToday}</span>
+        <span class="tile-disc__d">découverts</span>
+      </span>
+    </span>
+    <span class="tile-title">Mots<br>nouveaux</span>
+    <span class="tile-meta">Session bouclée</span>
+  `;
+}
+
+function reviewTileActiveHtml({ reviewRemaining, reviewedToday, reviewTotal }) {
+  return `
+    <span class="tile-label">${icon('repeat', { size: 15, color: 'currentColor', stroke: 2.4 })}<span>À réviser</span></span>
+    <span class="tile-count"><b>${reviewRemaining}</b><span>mot${reviewRemaining > 1 ? 's' : ''}</span></span>
+    <span class="ds-progress"><span class="ds-progress__fill" id="review-fill" style="width:0%"></span></span>
+    <span class="tile-meta">${reviewedToday} sur ${reviewTotal} révisé${reviewedToday > 1 ? 's' : ''} aujourd'hui</span>
+  `;
+}
+
+function reviewTileDoneHtml({ reviewedToday }) {
+  return `
+    <span class="tile-label">Révision</span>
+    <span class="tile-disc-wrap">
+      <span class="tile-disc">
+        <span class="tile-disc__n">${reviewedToday}</span>
+        <span class="tile-disc__d">révisés</span>
+      </span>
+    </span>
+    <span class="tile-meta">Session bouclée</span>
+  `;
+}
+
+// Compliqués/ratés, actif : aplat pâle, icône de la catégorie en filigrane dans le coin —
+// la couleur vive ne sert plus qu'au chiffre. Bouclé : disque plein + coche + statut, à la
+// place du grisé désactivé générique, dès que le compte est à zéro n'importe quel jour.
+function flatTileHtml({ count, title, glyphName, glyphColor, doneTitle, doneStatus }) {
+  if (count === 0) {
+    return `
+      <span class="tile-check-disc">${icon('check', { size: 15, color: '#fff', stroke: 3.2 })}</span>
+      <span>
+        <span class="tile-status-title">${doneTitle}</span>
+        <span class="tile-status">${doneStatus}</span>
+      </span>
+    `;
+  }
+  return `
+    <span class="tile-glyph-bg">${icon(glyphName, { size: 52, color: glyphColor, stroke: 2 })}</span>
+    <span class="tile-title">${title}</span>
+    <span class="tile-count">${count}</span>
+  `;
+}
+
 export async function renderHome(container, { onStartHard, onStartLearning, onStartReview, onStartFailedWords }) {
   container.innerHTML = '<div class="loading-block"><span class="ds-spinner"></span><div class="loading-msg">Chargement de la session</div></div>';
+  const today = todayISO();
   const session = await startSession();
   const failedWords = getFailedWordsPool();
   const streak = getStreak();
   const learnedCount = getLearnedCount();
   const inProgressCount = getInProgressCount();
+  const learnedToday = getLearnedToday(today);
+  const startedToday = getStartedToday(today);
   const dailyBudget = parseInt(getSetting('new_items_per_day') ?? '10', 10);
-  const introducedToday = countNewIntroducedToday(todayISO());
+  const introducedToday = countNewIntroducedToday(today);
   const newRemaining = session.newItems.length;
   const newPct = dailyBudget > 0 ? Math.min(100, Math.round((introducedToday / dailyBudget) * 100)) : 0;
 
   const reviewRemaining = session.reviewItems.length;
   // Le dénominateur est ce qui a réellement été noté aujourd'hui plus ce qu'il reste :
   // jamais un total inventé.
-  const reviewedToday = countReviewedToday(todayISO());
+  const reviewedToday = countReviewedToday(today);
   const reviewTotal = reviewedToday + reviewRemaining;
   const reviewPct = reviewTotal > 0 ? Math.round((reviewedToday / reviewTotal) * 100) : 0;
 
-  container.innerHTML = `
-    <div class="home-header">
-      <span class="today">${escapeHtml(formatDayFr(new Date()))}</span>
+  // La journée n'est « complète » que si les deux files sont vides — jamais entre les deux,
+  // et jamais gardé en mémoire d'une visite à l'autre : recalculé à chaque rendu de l'accueil.
+  const dayComplete = newRemaining === 0 && reviewRemaining === 0;
+  const now = new Date();
+
+  const headerInner = dayComplete ? `
+    <div class="home-header__row">
+      <div class="home-header__dates">
+        <span class="home-header__eyebrow">${icon('check', { size: 13, color: '#FAF7EF', stroke: 3.2 })}<span>Journée complète</span></span>
+        <span class="home-header__date">${escapeHtml(formatDateFrLong(now))}</span>
+      </div>
       <span class="ds-streak">${icon('flame', { size: 17, color: '#2B1F00', stroke: 2.4 })}<span class="ds-streak__n">${streak}</span><span class="ds-streak__u">j</span></span>
     </div>
+    <div class="home-header__next">${icon('clock', { size: 15, color: '#FDFBF5', stroke: 2.3 })}<span>Prochaine session demain</span></div>
+  ` : `
+    <div class="home-header__row">
+      <div class="home-header__dates">
+        <span class="home-header__eyebrow">${escapeHtml(formatWeekdayFr(now))}</span>
+        <span class="home-header__date">${escapeHtml(formatDateFrLong(now))}</span>
+      </div>
+      <span class="ds-streak">${icon('flame', { size: 17, color: '#2B1F00', stroke: 2.4 })}<span class="ds-streak__n">${streak}</span><span class="ds-streak__u">j</span></span>
+    </div>
+  `;
+
+  container.innerHTML = `
+    <div class="home-header${dayComplete ? ' home-header--complete' : ''}">${headerInner}</div>
 
     <div class="screen-scroll">
       <div class="stat-row">
-        <div class="stat-chip stat-chip--learned">
-          <div class="stat-value">${learnedCount}</div>
-          <div class="stat-label">Mots appris</div>
-        </div>
-        <div class="stat-chip">
-          <div class="stat-value">${inProgressCount}</div>
-          <div class="stat-label">Mots en cours</div>
-        </div>
+        ${statPillHtml({
+          variant: 'home', side: 'left', value: learnedCount, delta: `+${learnedToday}`,
+          deltaColor: 'var(--green-100)', label: 'Mots appris',
+          glyph: icon('trophy', { size: 17, color: 'var(--green-100)', stroke: 2.2 }),
+        })}
+        ${statPillHtml({
+          variant: 'home', side: 'right', value: inProgressCount, delta: `+${startedToday}`,
+          deltaColor: 'var(--copper-100)', label: 'Mots en cours',
+          glyph: icon('sprout', { size: 17, color: 'var(--copper-100)', stroke: 2.2 }),
+        })}
       </div>
 
       <div class="home-grid">
-        <button class="tile tile--new" id="start-learning-btn" type="button" ${newRemaining === 0 ? 'disabled' : ''}>
-          <span class="tile-label">${icon('sparkles', { size: 16, color: 'currentColor', stroke: 2.4 })}<span>Découverte</span></span>
-          <span class="tile-ring-wrap">
-            <span class="tile-ring" id="new-ring">
-              <span class="tile-ring-in">
-                <span>
-                  <span class="tile-ring-n">${introducedToday}</span>
-                  <span class="tile-ring-d">sur ${dailyBudget}</span>
-                </span>
-              </span>
-            </span>
-          </span>
-          <span class="tile-title">Mots<br>nouveaux</span>
-          <span class="tile-meta">${newRemaining === 0 ? "Rien de neuf aujourd'hui" : `${newRemaining} mot${newRemaining > 1 ? 's' : ''} restant${newRemaining > 1 ? 's' : ''} aujourd'hui`}</span>
+        <button class="tile tile--new${newRemaining === 0 ? ' tile--done' : ''}" id="start-learning-btn" type="button" ${newRemaining === 0 ? 'disabled' : ''}>
+          ${newRemaining === 0 ? newTileDoneHtml({ introducedToday }) : newTileActiveHtml({ introducedToday, dailyBudget, newRemaining })}
         </button>
 
-        <button class="tile tile--review" id="start-review-btn" type="button" ${reviewRemaining === 0 ? 'disabled' : ''}>
-          <span class="tile-label">${icon('repeat', { size: 15, color: 'currentColor', stroke: 2.4 })}<span>À réviser</span></span>
-          <span class="tile-count"><b>${reviewRemaining}</b><span>mot${reviewRemaining > 1 ? 's' : ''}</span></span>
-          <span class="ds-progress"><span class="ds-progress__fill" id="review-fill" style="width:0%"></span></span>
-          <span class="tile-meta">${reviewedToday} sur ${reviewTotal} révisé${reviewedToday > 1 ? 's' : ''} aujourd'hui</span>
+        <button class="tile tile--review${reviewRemaining === 0 ? ' tile--done' : ''}" id="start-review-btn" type="button" ${reviewRemaining === 0 ? 'disabled' : ''}>
+          ${reviewRemaining === 0 ? reviewTileDoneHtml({ reviewedToday }) : reviewTileActiveHtml({ reviewRemaining, reviewedToday, reviewTotal })}
         </button>
 
         <button class="tile tile--flat tile--tricky" id="start-hard-btn" type="button" ${session.hardItems.length === 0 ? 'disabled' : ''}>
-          <span class="tile-title">Mots<br>compliqués</span>
-          <span class="tile-count">${session.hardItems.length}</span>
+          ${flatTileHtml({
+            count: session.hardItems.length, title: 'Mots<br>compliqués', glyphName: 'brain', glyphColor: 'var(--violet-100)',
+            doneTitle: 'Compliqués', doneStatus: 'À jour',
+          })}
         </button>
 
         <button class="tile tile--flat tile--failed" id="start-failed-btn" type="button" ${failedWords.length === 0 ? 'disabled' : ''}>
-          <span class="tile-title">Mots<br>ratés</span>
-          <span class="tile-count">${failedWords.length}</span>
+          ${flatTileHtml({
+            count: failedWords.length, title: 'Mots<br>ratés', glyphName: 'circle-x', glyphColor: 'var(--crimson-100)',
+            doneTitle: 'Ratés', doneStatus: 'Aucun',
+          })}
         </button>
       </div>
     </div>
@@ -120,7 +217,7 @@ export async function renderHome(container, { onStartHard, onStartLearning, onSt
   // L'anneau et la barre partent de zéro puis se remplissent : le mouvement dit la part
   // déjà faite, il ne décore pas. requestAnimationFrame ne se déclenche pas sur une page
   // masquée — le minuteur reprend la main pour que la valeur finisse toujours par être la
-  // bonne, animée ou non.
+  // bonne, animée ou non. Absents une fois la tuile bouclée (plus d'anneau ni de barre).
   let painted = false;
   const paintProgress = () => {
     if (painted) return;
@@ -299,11 +396,16 @@ function questionCard(area, { instruction, question, hint, badge, context, retry
 // Résultat : bande + disque, la réponse attendue en plus gros que tout, la traduction et
 // l'exemple en blocs distincts. Sur un échec, la conséquence Leitner est écrite en clair.
 function resultCard(area, { isCorrect, answer, pos, translation, context, example, consequence, actionLabel }) {
+  // Un texte simple reste une note de réussite (ex. sortie des mots compliqués) — la
+  // pastille avant/après barrée est réservée aux échecs, elle n'aurait pas de sens ici.
+  const consequenceBlock = !consequence ? ''
+    : typeof consequence === 'string' ? `<div class="ds-alert ds-alert--success">${escapeHtml(consequence)}</div>`
+    : consequenceHtml(consequence);
   return new Promise((resolve) => {
     area.innerHTML = `
       <div class="session-body">
         ${resultCardHtml({ correct: isCorrect, answer, pos, translation, context, example })}
-        ${consequence ? consequenceHtml(consequence) : ''}
+        ${consequenceBlock}
       </div>
       <div class="session-foot">
         <button type="button" class="ds-btn ds-btn--hero${isCorrect ? '' : ' ds-btn--dark'}" id="next-btn">${escapeHtml(actionLabel)}</button>
@@ -333,19 +435,20 @@ function discoverFields(item) {
 // --- Questions -------------------------------------------------------------
 
 // La conséquence d'un échec est lue dans la ligne de progression telle qu'elle est avant
-// notation, donc elle décrit ce que la règle Leitner va réellement faire de l'item.
+// notation, donc elle décrit ce que la règle Leitner va réellement faire de l'item. Rendue
+// en pastilles avant/après (pas une phrase) — omises quand rien ne change (entraînement
+// libre, ou déjà au niveau plancher).
 function failureConsequence(item, answer, { preserveSchedule = false } = {}) {
-  const typed = answer.trim() ? `Ta réponse : <strong>${escapeHtml(answer.trim())}</strong> · ` : '';
-  if (preserveSchedule) {
-    return `${typed}entraînement libre : ni le niveau ni l'échéance ne changent`;
-  }
+  const wrongAnswer = answer.trim() || null;
+  if (preserveSchedule) return { wrongAnswer };
   const row = getProgressRow(item.item_type, item.item_key);
   if (row && row.consecutive_failures + 1 >= 3) {
-    return `${typed}3 échecs d'affilée : le mot passe en « mots compliqués »`;
+    return { wrongAnswer, before: `N${row.box_level}`, after: 'compliqué' };
   }
   const current = row?.box_level ?? 0;
-  if (current === 0) return `${typed}le mot reviendra en découverte un autre jour`;
-  return `${typed}le mot redescend au niveau ${current - 1} et reviendra en découverte`;
+  const next = Math.max(current - 1, 0);
+  if (current === next) return { wrongAnswer };
+  return { wrongAnswer, before: `N${current}`, after: `N${next}` };
 }
 
 // Redemande la même question jusqu'à une bonne réponse. Seule la première tentative
@@ -569,7 +672,8 @@ async function runHardModeRound(container, item, targetPhase, tally) {
       return { done: false, newPhase: advancedPhase(targetPhase, item.item_type) };
     }
 
-    const typed = answer.trim() ? `Ta réponse : <strong>${escapeHtml(answer.trim())}</strong> · ` : '';
+    // Plafonné : le plafond du jour bloque toute nouvelle tentative, mais la phase elle-même
+    // ne bouge pas — pas de pastille de transition, juste la réponse barrée.
     await resultCard(container, {
       isCorrect: false,
       answer: expected,
@@ -581,8 +685,8 @@ async function runHardModeRound(container, item, targetPhase, tally) {
       context,
       example: item.example || item.explication,
       consequence: result.cappedToday
-        ? `${typed}trop d'erreurs sur ce mot aujourd'hui : on le retente demain`
-        : `${typed}le mot redescend en phase ${demotedPhase(targetPhase, item.item_type)}`,
+        ? { wrongAnswer: answer.trim() || null }
+        : { wrongAnswer: answer.trim() || null, before: `Phase ${targetPhase}`, after: `Phase ${demotedPhase(targetPhase, item.item_type)}` },
       actionLabel: 'Réessayer',
     });
     if (result.cappedToday) return { done: true };
@@ -689,9 +793,46 @@ function formatDateFr(iso) {
   return `${d}/${m}/${y}`;
 }
 
-// Bilan chiffré, pas de félicitations : ce qui a bougé dans les niveaux, et la sortie.
-export async function renderSessionRecap(container, tally, { onHome, onReview }) {
-  container.innerHTML = '<div class="loading-block"><span class="ds-spinner"></span><div class="loading-msg">Calcul du bilan</div></div>';
+// Bilan « médaille » (apprentissage / révision) : le score porte l'écran, l'objectif
+// atteint est l'unique message — aucun détail de notation, disponible dans Statistiques.
+async function renderRecapMedal(container, tally, onHome) {
+  const streak = getStreak();
+  const today = todayISO();
+  const learnedCount = getLearnedCount();
+  const learnedToday = getLearnedToday(today);
+
+  container.innerHTML = `
+    <div class="session-body" style="gap:22px">
+      <div class="recap-medal-wrap">
+        <div class="recap-medal">
+          <div class="recap-medal__inner">
+            <div class="recap-medal__n">${tally.answered}</div>
+            <div class="recap-medal__d">/ ${tally.answered} MOTS</div>
+          </div>
+          <span class="recap-medal__check">${icon('check', { size: 26, color: '#FAF7EF', stroke: 3 })}</span>
+        </div>
+      </div>
+
+      <div class="recap-goal">
+        <div class="recap-goal__title">Objectif du jour atteint</div>
+        ${streak > 0 ? `<div class="recap-goal__streak">${icon('flame', { size: 16, color: 'var(--gold-400)', stroke: 2.3 })}<span>${streak} jour${streak > 1 ? 's' : ''} d'affilée</span></div>` : ''}
+      </div>
+
+      ${statPillHtml({
+        variant: 'recap', value: learnedCount, delta: `+${learnedToday}`,
+        deltaColor: 'var(--green-400)', label: 'Mots appris au total',
+      })}
+    </div>
+    <div class="session-foot">
+      <button type="button" class="ds-btn ds-btn--hero" id="recap-home">Retour à l'accueil</button>
+    </div>
+  `;
+  container.querySelector('#recap-home').addEventListener('click', onHome);
+}
+
+// Bilan détaillé (mots compliqués / mots ratés) : ce qui a bougé, chiffré — pas de médaille,
+// « objectif du jour » ne concerne que découverte/révision.
+async function renderRecapDetailed(container, tally, { onHome, onReview }) {
   const session = await startSession();
   const streak = getStreak();
   const nextDate = tally.nextDates.length ? tally.nextDates.slice().sort()[0] : null;
@@ -748,6 +889,15 @@ export async function renderSessionRecap(container, tally, { onHome, onReview })
   container.querySelector('#recap-home').addEventListener('click', onHome);
   if (reviewLeft > 0) {
     container.querySelector('#recap-review').addEventListener('click', () => onReview(session));
+  }
+}
+
+export async function renderSessionRecap(container, tally, { onHome, onReview }) {
+  container.innerHTML = '<div class="loading-block"><span class="ds-spinner"></span><div class="loading-msg">Calcul du bilan</div></div>';
+  if (tally.kind === 'learning' || tally.kind === 'review') {
+    await renderRecapMedal(container, tally, onHome);
+  } else {
+    await renderRecapDetailed(container, tally, { onHome, onReview });
   }
 }
 

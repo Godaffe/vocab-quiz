@@ -145,9 +145,48 @@ export function resultCardHtml({ correct, answer, pos, translation, context, exa
   `;
 }
 
-// Ligne de conséquence Leitner, sous la carte ratée : ce qui arrive au mot, en clair.
-export function consequenceHtml(inner) {
-  return `<div class="consequence">${icon('triangle-alert', { size: 17, color: '#C4123A' })}<span>${inner}</span></div>`;
+// Ligne de conséquence Leitner, sous la carte ratée : la réponse fausse barrée, puis le
+// niveau (ou la phase, ou le mode) avant/après en pastilles reliées par une flèche. Quand
+// rien ne change (entraînement libre), la paire de pastilles est simplement omise.
+export function consequenceHtml({ wrongAnswer, before, after }) {
+  // Rien à montrer (entraînement libre, déjà au plancher, plafond du jour) : pas de carton
+  // vide avec juste l'icône.
+  if (!wrongAnswer && !(before && after)) return '';
+  const typed = wrongAnswer
+    ? `<span class="consequence__wrong">${escapeHtml(wrongAnswer)}</span>`
+    : '';
+  const transition = before && after ? `
+    <div class="consequence__levels">
+      <span class="consequence__level">${escapeHtml(before)}</span>
+      ${icon('arrow-right', { size: 15, color: 'var(--crimson-700)', stroke: 2.4 })}
+      <span class="consequence__level consequence__level--after">${escapeHtml(after)}</span>
+    </div>` : '';
+  return `
+    <div class="consequence">
+      <div class="consequence__answer">${icon('triangle-alert', { size: 17, color: '#C4123A' })}${typed}</div>
+      ${transition}
+    </div>
+  `;
+}
+
+// --- pastille de stat ---------------------------------------------------------
+// Pile à trois couches (deux liserés décalés en arrière-plan, le corps ink-500 au premier
+// plan) : même mécanique visuelle pour la ligne de stats de l'accueil (icône + libellé sous
+// le nombre) et le total du bilan (libellé à droite, sans icône).
+export function statPillHtml({ variant = 'home', side = 'left', value, delta, deltaColor, label, glyph = '' }) {
+  const peekClass = variant === 'recap' ? 'stat-pill--full' : side === 'right' ? 'stat-pill--right' : 'stat-pill--left';
+  const deltaHtml = delta != null ? `<span class="stat-pill__delta" style="color:${deltaColor}">${escapeHtml(delta)}</span>` : '';
+  const nums = `<div class="stat-pill__nums"><span class="stat-pill__n">${escapeHtml(value)}</span>${deltaHtml}</div>`;
+  const body = variant === 'recap'
+    ? `${nums}<span class="stat-pill__label">${escapeHtml(label)}</span>`
+    : `<div class="stat-pill__row">${nums}<span class="stat-pill__glyph">${glyph}</span></div><span class="stat-pill__label">${escapeHtml(label)}</span>`;
+  return `
+    <div class="stat-pill stat-pill--${variant} ${peekClass}">
+      <div class="stat-pill__peek stat-pill__peek--1"></div>
+      <div class="stat-pill__peek stat-pill__peek--2"></div>
+      <div class="stat-pill__body">${body}</div>
+    </div>
+  `;
 }
 
 // --- gestes ------------------------------------------------------------------

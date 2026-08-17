@@ -291,19 +291,85 @@ input[type="text"]:focus, input[type="number"]:focus {
 
 /* ---------- accueil : mosaïque ---------- */
 
-.home-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 0 0; }
-
-.home-header .today {
-  font: 600 13px/1 var(--font-ui);
-  letter-spacing: .12em;
-  text-transform: uppercase;
-  color: var(--text-muted);
+/* Bandeau plein qui déborde jusqu'aux bords de l'écran (marges négatives = gouttière de
+   l'écran) : coins arrondis en bas seulement, comme un panneau posé en haut de la page.
+   Verrouillé sur --stone-500 en temps normal, --green-600 dès que les deux sessions du jour
+   (nouveaux + révision) sont bouclées — jamais entre les deux. */
+.home-header {
+  position: relative;
+  margin: 0 calc(-1 * var(--gutter-screen)) 2px;
+  padding: 20px var(--gutter-screen) 18px;
+  border-radius: 0 0 22px 22px;
+  box-shadow: 0 3px 10px -6px rgba(20, 19, 12, .28), inset 0 -1.5px 0 var(--ink-200);
+  background-color: var(--stone-500);
 }
 
-.stat-row { display: flex; gap: 34px; padding: 16px 0 0; }
-.stat-chip .stat-value { font: 700 32px/1 var(--font-display); letter-spacing: -.03em; color: var(--text-strong); }
-.stat-chip--learned .stat-value { color: var(--green-600); }
-.stat-chip .stat-label { font: 500 13px/1 var(--font-ui); color: var(--text-body); margin-top: 8px; }
+.home-header--complete { background-color: var(--green-600); }
+
+.home-header__row { position: relative; display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.home-header__dates { display: flex; flex-direction: column; gap: 7px; }
+
+.home-header__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font: 600 11px/1 var(--font-ui);
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: rgba(250, 247, 239, .85);
+}
+
+.home-header__date { font: 700 30px/1 var(--font-display); letter-spacing: -.03em; color: var(--paper-high); }
+
+.home-header__next {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(250, 247, 239, .2);
+  font: 500 12.5px/1 var(--font-ui);
+  color: rgba(250, 247, 239, .9);
+}
+
+.stat-row { display: flex; gap: 12px; padding: 16px 0 0; }
+
+/* Pastille de stat : pile à trois couches (deux liserés décalés en dessous, le corps
+   ink-500 au premier plan). Le décalage part vers l'intérieur de la paire pour lire comme
+   un jeu de cartes commun aux deux pastilles ; --full centre le liséré pour une pastille
+   seule (bilan de session). */
+.stat-pill { position: relative; flex: 1; padding-top: 8px; }
+.stat-pill--recap { flex: none; width: 100%; }
+
+.stat-pill__peek { position: absolute; top: 0; height: 20px; border-radius: 12px; background: var(--ink-300); }
+.stat-pill__peek--2 { top: 4px; background: var(--ink-400); }
+.stat-pill--left .stat-pill__peek { left: 8px; right: 2px; }
+.stat-pill--left .stat-pill__peek--2 { left: 4px; }
+.stat-pill--right .stat-pill__peek { left: 0; right: 8px; }
+.stat-pill--right .stat-pill__peek--2 { right: 4px; }
+.stat-pill--full .stat-pill__peek { left: 8px; right: 0; }
+.stat-pill--full .stat-pill__peek--2 { left: 4px; right: 2px; }
+
+.stat-pill__body {
+  position: relative;
+  border-radius: 12px;
+  background: var(--ink-500);
+  box-shadow: 0 4px 10px -5px rgba(20, 19, 12, .5);
+  padding: 12px 14px;
+}
+
+.stat-pill__nums { display: flex; align-items: baseline; gap: 6px; }
+.stat-pill__n { font: 700 28px/1 var(--font-display); letter-spacing: -.04em; color: var(--canvas); }
+.stat-pill__delta { font: 700 11px/1 var(--font-ui); }
+.stat-pill__label { display: block; font: 500 11.5px/1 var(--font-ui); color: var(--canvas); margin-top: 7px; }
+.stat-pill__glyph { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: rgba(250, 247, 239, .2); }
+
+.stat-pill--home .stat-pill__row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+
+.stat-pill--recap .stat-pill__body { display: flex; align-items: center; justify-content: space-between; padding: 13px 15px; }
+.stat-pill--recap .stat-pill__n { font-size: 26px; color: var(--stone-50); }
+.stat-pill--recap .stat-pill__delta { font: 600 12px/1 var(--font-ui); }
+.stat-pill--recap .stat-pill__label { margin-top: 0; font-size: 11.5px; }
 
 /* Colonne cuivre à gauche sur 3 rangs, puis révision / compliqués / ratés à droite. */
 .home-grid {
@@ -409,12 +475,82 @@ input[type="text"]:focus, input[type="number"]:focus {
 .tile--review .ds-progress { height: 6px; background: rgba(253, 251, 245, .26); }
 .tile--review .ds-progress__fill { background: var(--paper-high); }
 
+/* État « bouclée » (déclenché par son propre restant à zéro, indépendamment de l'autre
+   tuile) : aplat pâle + liséré au lieu du remplissage plein, disque uni au lieu de
+   l'anneau/du nombre à gauche — cette tuile n'a plus rien à faire progresser aujourd'hui. */
+.tile--new.tile--done {
+  background: var(--copper-50);
+  box-shadow: inset 0 0 0 1.5px var(--copper-500);
+  color: var(--copper-700);
+}
+.tile--new.tile--done .tile-label { color: var(--copper-600); }
+.tile--new.tile--done .tile-title { color: var(--copper-700); }
+.tile--new.tile--done .tile-meta { color: var(--copper-600); font-weight: 600; }
+
+.tile--review.tile--done {
+  background: var(--teal-50);
+  box-shadow: inset 0 0 0 1.5px var(--teal-500);
+  color: var(--teal-600);
+}
+.tile--review.tile--done .tile-label { color: var(--teal-600); }
+.tile--review.tile--done .tile-meta { color: var(--teal-600); font-weight: 600; }
+
+.tile-disc-wrap { display: grid; place-items: center; margin-top: auto; margin-bottom: auto; padding: 16px 0; }
+.tile-disc {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border-radius: var(--radius-pill);
+}
+.tile--new .tile-disc { width: 134px; height: 134px; background: var(--copper-500); box-shadow: 0 0 0 6px rgba(176, 74, 15, .16); }
+.tile--review .tile-disc { width: 112px; height: 112px; background: var(--teal-500); gap: 3px; box-shadow: 0 0 0 5px rgba(13, 110, 122, .16); }
+.tile-disc__n { font: 700 48px/1 var(--font-display); letter-spacing: -.04em; color: var(--paper-high); }
+.tile--review .tile-disc__n { font-size: 40px; }
+.tile-disc__d { font: 600 10px/1 var(--font-ui); letter-spacing: .14em; text-transform: uppercase; color: rgba(253, 251, 245, .85); }
+
 /* Compliqués / ratés : mêmes aplats, la couleur porte le sens. */
-.tile--flat { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; }
-.tile--flat .tile-title { font: 600 15px/1.25 var(--font-ui); }
-.tile--flat .tile-count { font: 700 32px/1 var(--font-display); letter-spacing: -.03em; }
-.tile--tricky { background: var(--cat-tricky); box-shadow: 0 14px 28px -18px rgba(109, 40, 217, .7); }
-.tile--failed { background: var(--cat-failed); box-shadow: 0 14px 28px -18px rgba(196, 18, 58, .7); }
+.tile--flat { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; overflow: hidden; }
+.tile--flat .tile-title { position: relative; font: 600 15px/1.25 var(--font-ui); }
+.tile--flat .tile-count { position: relative; font: 700 32px/1 var(--font-display); letter-spacing: -.03em; }
+
+/* Aplat pâle + liséré + icône décorative en filigrane qui déborde du coin — la couleur vive
+   ne sert plus qu'au disque de l'état « à jour » et au chiffre lui-même. */
+.tile--tricky { background: var(--violet-50); box-shadow: inset 0 0 0 1.5px var(--violet-100); }
+.tile--tricky .tile-title { color: var(--violet-600); }
+.tile--tricky .tile-count { color: var(--violet-500); }
+.tile--failed { background: var(--crimson-50); box-shadow: inset 0 0 0 1.5px var(--crimson-100); }
+.tile--failed .tile-title { color: var(--crimson-700); }
+.tile--failed .tile-count { color: var(--crimson-500); }
+
+.tile-glyph-bg { position: absolute; right: -10px; bottom: -16px; pointer-events: none; }
+
+/* État « à jour »/« aucun » (compte à 0) : remplace le grisé désactivé générique par un
+   aplat toujours coloré, un disque plein avec coche, et un texte de statut au lieu du
+   chiffre — même sur un jour ordinaire, indépendant de l'état des deux tuiles du haut. */
+.tile--tricky:disabled, .tile--failed:disabled {
+  cursor: not-allowed;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  color: inherit;
+  box-shadow: none;
+}
+.tile--tricky:disabled { background: var(--violet-100); }
+.tile--failed:disabled { background: var(--crimson-100); }
+
+.tile-check-disc { display: grid; place-items: center; width: 38px; height: 38px; flex: 0 0 38px; border-radius: var(--radius-pill); }
+.tile--tricky:disabled .tile-check-disc { background: var(--violet-500); }
+.tile--failed:disabled .tile-check-disc { background: var(--crimson-500); }
+
+.tile-status-title { font: 600 14px/1.25 var(--font-ui); }
+.tile--tricky:disabled .tile-status-title { color: var(--violet-600); }
+.tile--failed:disabled .tile-status-title { color: var(--crimson-700); }
+
+.tile-status { font: 600 12px/1 var(--font-ui); margin-top: 6px; }
+.tile--tricky:disabled .tile-status { color: var(--violet-500); }
+.tile--failed:disabled .tile-status { color: var(--crimson-500); }
 
 /* ---------- coque de session ---------- */
 
@@ -567,20 +703,39 @@ input[type="text"]:focus, input[type="number"]:focus {
 .ds-verdict--correct { background: var(--green-500); box-shadow: var(--shadow-correct); }
 .ds-verdict--wrong { background: var(--crimson-500); box-shadow: var(--shadow-wrong); }
 
-/* Conséquence Leitner : écrite noir sur blanc, sous la carte. */
+/* Conséquence Leitner : la réponse fausse barrée à gauche, la transition de niveau/phase en
+   pastilles reliées par une flèche à droite — jamais de phrase à lire. */
 .consequence {
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 12px 14px;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 14px;
   background: var(--paper);
   border-radius: var(--radius-md);
   box-shadow: inset 0 0 0 1px var(--ink-200);
-  font: 500 13px/1.45 var(--font-ui);
-  color: var(--text-body);
 }
 
-.consequence strong { color: var(--text-strong); }
+.consequence__answer { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.consequence__wrong {
+  font: 600 15px/1 var(--font-ui);
+  color: var(--crimson-500);
+  text-decoration-line: line-through;
+  text-decoration-thickness: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.consequence__levels { display: flex; align-items: center; gap: 7px; flex: none; }
+.consequence__level {
+  font: 700 13px/1 var(--font-display);
+  padding: 5px 9px;
+  border-radius: 8px;
+  color: var(--text-faint);
+  box-shadow: inset 0 0 0 1.5px var(--ink-200);
+}
+.consequence__level--after { color: #fff; background: var(--crimson-500); box-shadow: none; }
 
 /* ---------- bilan de session ---------- */
 
@@ -614,6 +769,69 @@ input[type="text"]:focus, input[type="number"]:focus {
   box-shadow: inset 0 0 0 1px rgba(33, 31, 20, .12);
   font: 600 13.5px/1.4 var(--font-ui);
   color: #2B1F00;
+}
+
+/* ---------- bilan — médaille (apprentissage / révision) ---------- */
+/* Le score porte l'écran : anneau plein (toujours 100%, un mot passé ne compte nulle part
+   donc numérateur = dénominateur par construction), coche qui referme le cercle. Aucun
+   détail de notation ici — juste l'objectif atteint. */
+
+.recap-medal-wrap { display: grid; place-items: center; }
+
+.recap-medal {
+  position: relative;
+  width: 190px;
+  height: 190px;
+  border-radius: var(--radius-pill);
+  background: conic-gradient(var(--green-500) 0 100%, var(--ink-200) 0);
+  display: grid;
+  place-items: center;
+  box-shadow: 0 14px 30px -14px rgba(15, 122, 74, .55);
+}
+
+.recap-medal__inner {
+  width: 158px;
+  height: 158px;
+  border-radius: var(--radius-pill);
+  background: var(--paper-high);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  box-shadow: inset 0 0 0 1.5px var(--ink-200);
+}
+
+.recap-medal__n { font: 700 62px/1 var(--font-display); letter-spacing: -.05em; color: var(--text-strong); }
+.recap-medal__d { font: 600 12px/1 var(--font-mono); letter-spacing: .12em; color: var(--text-muted); }
+
+.recap-medal__check {
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-pill);
+  background: var(--green-500);
+  box-shadow: 0 4px 10px -3px rgba(15, 122, 74, .6), inset 0 -1.5px 0 rgba(0, 0, 0, .15);
+}
+
+.recap-goal { text-align: center; display: flex; flex-direction: column; gap: 9px; align-items: center; }
+.recap-goal__title { font: 700 26px/1.15 var(--font-display); letter-spacing: -.03em; color: var(--text-strong); }
+
+.recap-goal__streak {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 13px;
+  background: var(--gold-50);
+  border-radius: var(--radius-pill);
+  box-shadow: inset 0 0 0 1.5px var(--gold-400);
+  font: 700 13px/1 var(--font-display);
+  color: #5A3B00;
 }
 
 /* ---------- nav du bas ---------- */
