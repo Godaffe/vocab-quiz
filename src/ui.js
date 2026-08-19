@@ -330,7 +330,10 @@ function discoverCard(area, { word, pos, example, translation, context, registre
     `;
     const card = area.querySelector('#flip-card');
     const flip = () => card.classList.toggle('ds-flip--back');
-    onSwipe(card, { onLeft: flip, onRight: flip, onUp: () => resolve() });
+    // Le glissement (haut ou latéral) couvre toute la zone entre l'en-tête et le bouton, pas
+    // seulement la carte — plus simple à déclencher au pouce sans viser précisément la carte.
+    // Le tap pour retourner reste, lui, propre à la carte.
+    onSwipe(area.querySelector('.session-body'), { onLeft: flip, onRight: flip, onUp: () => resolve() });
     onCardTap(card, flip);
     area.querySelector('#next-btn').addEventListener('click', () => resolve());
   });
@@ -365,7 +368,6 @@ function questionCard(area, { instruction, question, hint, badge, context, retry
     const input = area.querySelector('#answer-input');
     const button = area.querySelector('#submit-btn');
     const skipBtn = area.querySelector('#skip-btn');
-    const qcard = area.querySelector('.ds-qcard');
     let settled = false;
 
     const submit = async () => {
@@ -389,14 +391,23 @@ function questionCard(area, { instruction, question, hint, badge, context, retry
 
     button.addEventListener('click', submit);
     skipBtn.addEventListener('click', skip);
-    if (qcard) onSwipe(qcard, { onRight: skip });
+    // Le glissement latéral pour passer fonctionne sur toute la zone entre l'en-tête et les
+    // boutons, pas seulement la carte de question — le champ de saisie garde son geste natif
+    // (voir onSwipe, qui ignore un glissement démarré dans un input).
+    onSwipe(area.querySelector('.session-body'), { onRight: skip });
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') submit();
     });
     input.addEventListener('input', () => {
       input.classList.remove('ds-field--correct', 'ds-field--wrong');
     });
-    input.focus();
+    // Le clavier s'ouvre par défaut dès que la question s'affiche, sans avoir à taper le champ
+    // au préalable. L'appel reste synchrone (pas de rAF/setTimeout) : iOS n'ouvre le clavier
+    // sur un focus() programmatique que s'il est rattaché sans détour au geste utilisateur qui
+    // vient de faire apparaître cette carte (clic, tap, relâchement de glissement). preventScroll
+    // évite que la mise au point ne déclenche un scroll natif — déjà bloqué par ailleurs via
+    // touch-action:none sur la zone de session, mais la souris/le clavier physique y échappent.
+    input.focus({ preventScroll: true });
   });
 }
 
@@ -827,15 +838,23 @@ async function renderRecapMedal(container, tally, onHome) {
   const today = todayISO();
   const learnedCount = getLearnedCount();
   const learnedToday = getLearnedToday(today);
-  const pct = tally.answered > 0 ? Math.round((tally.correct / tally.answered) * 100) : 100;
+  // Le bilan de découverte porte l'objectif du jour (mots appris aujourd'hui sur l'objectif
+  // quotidien), pas le score d'une session — plusieurs sessions dans la même journée doivent
+  // faire progresser le même total, celui déjà montré sur l'anneau d'accueil. La révision
+  // garde le score de la session, qui n'a pas d'objectif journalier propre.
+  const isLearning = tally.kind === 'learning';
+  const dailyBudget = parseInt(getSetting('new_items_per_day') ?? '10', 10);
+  const medalNum = isLearning ? learnedToday : tally.correct;
+  const medalDen = isLearning ? dailyBudget : tally.answered;
+  const pct = medalDen > 0 ? Math.min(100, Math.round((medalNum / medalDen) * 100)) : 100;
 
   container.innerHTML = `
     <div class="session-body" style="gap:22px">
       <div class="recap-medal-wrap">
         <div class="recap-medal" id="recap-ring">
           <div class="recap-medal__inner">
-            <div class="recap-medal__n">${tally.correct}</div>
-            <div class="recap-medal__d">/ ${tally.answered} MOT${tally.answered > 1 ? 'S' : ''}</div>
+            <div class="recap-medal__n">${medalNum}</div>
+            <div class="recap-medal__d">/ ${medalDen} MOT${medalDen > 1 ? 'S' : ''}</div>
           </div>
           <span class="recap-medal__check">${icon('check', { size: 26, color: '#FAF7EF', stroke: 3 })}</span>
         </div>

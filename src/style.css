@@ -580,7 +580,12 @@ input[type="text"]:focus, input[type="number"]:focus {
 /* La carte défile seule si elle dépasse (hint long, exemple long...) ; le bouton d'action en
    dessous reste en place, simple frère flex non extensible plutôt qu'un élément fixé. « safe
    center » évite qu'un centrage vertical ne masque le haut de la carte dès qu'elle défile. */
-.session-body { flex: 1; display: flex; flex-direction: column; justify-content: safe center; gap: 12px; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+/* touch-action:none couvre toute la zone de glissement (voir onSwipe dans ui.js) : au doigt,
+   aucun défilement natif n'y est possible, y compris clavier ouvert — seuls le tap et le
+   glissement gérés en JS y réagissent. La souris/molette reste libre (touch-action ne
+   s'applique qu'au tactile) : le défilement overflow-y reste donc utile sur desktop pour une
+   carte trop longue. */
+.session-body { flex: 1; display: flex; flex-direction: column; justify-content: safe center; gap: 12px; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: none; }
 .session-foot { flex: none; padding: 16px 0 32px; display: flex; flex-direction: column; gap: 10px; }
 .session-note { text-align: center; font: 500 12.5px/1.4 var(--font-ui); color: var(--text-muted); }
 
