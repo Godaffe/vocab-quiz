@@ -72,7 +72,6 @@
   color-scheme: light;
 }
 
-@keyframes ds-nudge { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
 @keyframes ds-scale-in { from { opacity: 0; transform: scale(.97); } to { opacity: 1; transform: none; } }
 @keyframes ds-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 @keyframes ds-fade { from { opacity: 0; } to { opacity: 1; } }
@@ -208,14 +207,6 @@ button { font-family: inherit; }
 
 .ds-field::placeholder { color: var(--text-faint); font-family: var(--font-ui); font-weight: 400; }
 .ds-field:focus { outline: 0; border-color: var(--copper-500); box-shadow: var(--ring-focus); }
-.ds-field--correct, .ds-field--correct:focus { border-color: var(--green-500); background: var(--green-50); box-shadow: var(--inset-well); }
-/* Un seul écart de 4 px, jamais répété : la faute se signale, elle ne s'agite pas. */
-.ds-field--wrong, .ds-field--wrong:focus {
-  border-color: var(--crimson-500);
-  background: var(--crimson-50);
-  box-shadow: var(--inset-well);
-  animation: ds-nudge var(--dur-slow) var(--ease-in-out);
-}
 
 input[type="text"], input[type="number"], input[type="file"] {
   font: inherit;
@@ -291,6 +282,7 @@ input[type="text"]:focus, input[type="number"]:focus {
 }
 
 .ds-streak {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -321,6 +313,47 @@ input[type="text"]:focus, input[type="number"]:focus {
 }
 
 .home-header--complete { background-color: var(--green-600); }
+
+/* ---------- éclat de l'objectif du jour (retour à l'accueil, séance qui boucle la journée) ---------- */
+/* Deux temps nets, enchaînés de près : le badge de série éclate seul (or), puis 300 ms plus
+   tard le bloc entier grossit de 2 %, passe au vert et éclate à son tour. Hors de ces deux
+   instants, `.home-header` et `.ds-streak` restent ce qu'ils ont toujours été — l'éclat n'est
+   qu'une transition ponctuelle posée par playDailyGoalBurst (ui.js), jamais un état persistant
+   au-delà de sa propre durée. */
+.home-header--burst {
+  transition: transform 320ms var(--ease-spring), background-color 280ms linear, box-shadow 280ms linear;
+  will-change: transform;
+}
+.home-header--burst.home-header--swell {
+  transform: scale(1.02);
+  transition: transform 180ms var(--ease-out), background-color 0ms linear, box-shadow 280ms linear;
+}
+.home-header__flash {
+  position: absolute; inset: 0; border-radius: 0 0 22px 22px; pointer-events: none;
+  background: var(--green-50); opacity: 0; transform: scale(.15); transform-origin: 50% 60%;
+  transition: transform 420ms var(--ease-out), opacity 280ms linear;
+}
+.home-header__flash--on {
+  opacity: 1; transform: scale(1);
+  transition: transform 420ms var(--ease-out), opacity 140ms linear;
+}
+
+.ds-streak--burst { transition: transform 300ms var(--ease-spring); }
+.ds-streak--burst.ds-streak--pop { transform: scale(1.08); transition: transform 160ms var(--ease-spring); }
+
+.eclat-host { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
+.eclat { position: absolute; width: 0; height: 0; }
+.eclat > i { position: absolute; left: 0; top: 0; display: block; border-radius: 999px; opacity: 0; }
+
+@keyframes ds-eclat-34 { 0% { transform: translateY(-5px) scaleY(.3); opacity: 1; } 55% { transform: translateY(-34px) scaleY(1); opacity: 1; } 100% { transform: translateY(-44px) scaleY(1); opacity: 0; } }
+@keyframes ds-eclat-50 { 0% { transform: translateY(-6px) scaleY(.3); opacity: 1; } 55% { transform: translateY(-50px) scaleY(1); opacity: 1; } 100% { transform: translateY(-62px) scaleY(1); opacity: 0; } }
+@keyframes ds-eclat-82 { 0% { transform: translateY(-6px) scaleY(.3); opacity: 1; } 55% { transform: translateY(-82px) scaleY(1); opacity: 1; } 100% { transform: translateY(-97px) scaleY(1); opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .home-header--burst, .home-header--burst.home-header--swell, .ds-streak--burst.ds-streak--pop { transition-duration: 1ms; transform: none; }
+  .home-header__flash, .home-header__flash--on { transition-duration: 1ms; opacity: 0 !important; }
+  .eclat > i { display: none; }
+}
 
 .home-header__row { position: relative; display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
 .home-header__dates { display: flex; flex-direction: column; gap: 7px; }
@@ -600,12 +633,18 @@ input[type="text"]:focus, input[type="number"]:focus {
   background: var(--paper);
   border-radius: var(--radius-card);
   box-shadow: 0 0 0 1px var(--ink-300), var(--shadow-flat);
+  transition: transform 220ms cubic-bezier(.3, 0, .1, 1), opacity 220ms linear;
 }
 .ds-stack__live { position: relative; z-index: 1; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 
 /* ---------- carte découverte (retournement) ---------- */
 
-.ds-flip { position: relative; display: flex; flex-direction: column; height: 340px; perspective: 1400px; touch-action: none; cursor: pointer; }
+.ds-flip {
+  position: relative; display: flex; flex-direction: column; height: 340px;
+  perspective: 1400px; touch-action: none; cursor: pointer;
+  transition: transform 160ms var(--ease-out), opacity 160ms linear;
+  will-change: transform;
+}
 .ds-flip__inner { position: relative; flex: 1; min-height: 0; transform-style: preserve-3d; transition: transform var(--dur-flip) var(--ease-in-out); }
 .ds-flip--back .ds-flip__inner { transform: rotateY(180deg); }
 
@@ -634,6 +673,37 @@ input[type="text"]:focus, input[type="number"]:focus {
 .ds-flip__face--back { opacity: 0; transform: rotateY(180deg); }
 .ds-flip--back .ds-flip__face--back { opacity: 1; }
 
+/* ---------- retournement 1a + passage 1c ---------- */
+/* La prise incline la carte sans la tourner : le retournement reste déclenché par le geste,
+   l'inclinaison ne fait que l'annoncer. `perspective()` est dans le transform lui-même —
+   la propriété `perspective` de .ds-flip ne s'applique qu'à ses enfants. */
+.ds-flip--press {
+  transform: perspective(1400px) rotateY(-7deg) rotateX(4deg) scale(1.03);
+  transition-duration: 130ms;
+}
+
+/* Sortie (1c) : nette, droit vers le haut, sans rotation. */
+.ds-flip--out {
+  transform: translateY(-430px) scale(.96);
+  opacity: 0;
+  transition: transform 220ms cubic-bezier(.3, 0, .1, 1), opacity 180ms linear;
+  pointer-events: none;
+}
+
+/* Entrée de la carte suivante : état de départ posé sans transition, retiré à la trame
+   suivante (voir enterCard) — elle remonte alors de 14 px avec la transition de base. */
+.ds-flip--in {
+  transform: translateY(14px) scale(.97);
+  opacity: .4;
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ds-flip, .ds-flip__inner, .ds-stack__under { transition-duration: 1ms; }
+  .ds-flip--press { transform: none; }
+  .ds-flip--out { transform: none; }
+}
+
 .ds-flip__foot {
   position: absolute;
   left: 0; right: 0; bottom: 18px;
@@ -652,23 +722,9 @@ input[type="text"]:focus, input[type="number"]:focus {
   color: var(--text-body);
 }
 
-/* ---------- carte question ---------- */
+/* ---------- carte question (indice de reprise, réutilisé par la carte à fusion) ---------- */
 
-.ds-qcard {
-  background: var(--paper-high);
-  border-radius: var(--radius-card);
-  box-shadow: var(--keyline), var(--shadow-raised);
-  padding: var(--card-pad-lg);
-  animation: ds-scale-in var(--dur-base) var(--ease-out);
-}
-
-/* L'or ne sert qu'à deux choses : la deuxième tentative et la série. */
-.ds-qcard--retry { background: var(--gold-50); box-shadow: 0 0 0 1.5px var(--gold-400), var(--shadow-raised); border-top: 4px solid var(--gold-500); }
-.ds-qcard__head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
-.ds-qcard__head .ds-prompt { flex: 1; }
-.ds-qcard--retry .ds-prompt { color: #5A3B00; }
 .ds-qcard__hint { margin-top: 16px; }
-.ds-qcard__slot { margin-top: 18px; }
 
 .ds-prompt { font: 600 12px/1.25 var(--font-ui); text-transform: uppercase; letter-spacing: .09em; color: var(--text-faint); }
 .ds-word { font: 700 38px/1.18 var(--font-display); letter-spacing: -.03em; color: var(--text-strong); text-wrap: balance; }
@@ -700,44 +756,160 @@ input[type="text"]:focus, input[type="number"]:focus {
 .ds-hint__slot { width: 13px; height: 3px; border-radius: 2px; background: var(--ink-400); }
 .ds-hint__slot--shown { width: auto; height: auto; background: none; font: 700 20px/1 var(--font-display); color: var(--text-strong); }
 
-/* ---------- carte résultat ---------- */
+/* ---------- blocs traduction / exemple (dépliés par la carte à fusion) ---------- */
 
-.ds-result {
+.ds-result__answer { font: 700 30px/1.1 var(--font-display); letter-spacing: -.03em; color: var(--text-strong); }
+.ds-result__answer + .ds-pos { margin-top: 8px; }
+.ds-result__translation { padding: var(--space-4) var(--card-pad); background: var(--stone-500); }
+.ds-morph--correct .ds-result__translation { background: var(--green-600); }
+.ds-morph--wrong .ds-result__translation { background: var(--crimson-600); }
+.ds-result__translation .ds-result__blocklabel { color: rgba(255, 255, 255, .72); }
+.ds-result__translation .ds-result__blockvalue { font: 600 18px/1.35 var(--font-ui); color: #fff; }
+.ds-result__translation .ds-context { color: rgba(255, 255, 255, .75); text-align: left; }
+.ds-result__example { padding: var(--space-4) var(--card-pad) var(--space-5); background: var(--paper); border-left: 4px solid var(--copper-300); box-shadow: var(--inset-well); }
+.ds-morph--correct .ds-result__example { border-left-color: var(--green-500); }
+.ds-morph--wrong .ds-result__example { border-left-color: var(--crimson-500); }
+.ds-result__example .ds-result__blockvalue { font: 400 16px/1.5 var(--font-ui); color: var(--text-body); font-style: italic; }
+.ds-result__blocklabel { font: 600 12px/1.25 var(--font-ui); text-transform: uppercase; letter-spacing: .09em; color: var(--text-muted); margin-bottom: 4px; }
+
+/* ---------- carte à fusion : question devient résultat ---------- */
+/* Un seul élément traverse tout : rien n'est remplacé. Le champ se colore et perd son cadre,
+   son texte devient la réponse tapée, le libellé devient le verdict, et la teinte naît dans
+   le champ pour se répandre sur tout l'en-tête. commit (200ms) → trait si faux (240ms) →
+   morphose (360ms) → dépli de la traduction/l'exemple (340ms). */
+.ds-morph {
+  position: relative;
   background: var(--paper-high);
   border-radius: var(--radius-card);
   box-shadow: var(--keyline), var(--shadow-raised);
   overflow: hidden;
   cursor: pointer;
   animation: ds-scale-in var(--dur-base) var(--ease-out);
+  transition: transform 320ms var(--ease-spring);
 }
+.ds-morph--committing { transform: scale(.99); }
 
-.ds-result__band { height: 10px; }
-.ds-result__head { display: flex; align-items: center; gap: var(--space-4); padding: var(--space-5) var(--card-pad); border-bottom: 1.5px solid var(--ink-200); }
-.ds-result__headtext { min-width: 0; flex: 1; }
-.ds-result__verdictlabel { font: 600 12px/1.25 var(--font-ui); text-transform: uppercase; letter-spacing: .09em; margin-bottom: 4px; }
-.ds-result__answer { font: 700 30px/1.1 var(--font-display); letter-spacing: -.03em; color: var(--text-strong); }
-.ds-result__answer + .ds-pos { margin-top: 8px; }
-.ds-result__translation { padding: var(--space-4) var(--card-pad); }
-.ds-result__translation .ds-result__blocklabel { color: rgba(255, 255, 255, .72); }
-.ds-result__translation .ds-result__blockvalue { font: 600 18px/1.35 var(--font-ui); color: #fff; }
-.ds-result__translation .ds-context { color: rgba(255, 255, 255, .75); text-align: left; }
-.ds-result__example { padding: var(--space-4) var(--card-pad) var(--space-5); background: var(--paper); border-left: 4px solid var(--copper-300); box-shadow: var(--inset-well); }
-.ds-result__example .ds-result__blockvalue { font: 400 16px/1.5 var(--font-ui); color: var(--text-body); font-style: italic; }
-.ds-result__blocklabel { font: 600 12px/1.25 var(--font-ui); text-transform: uppercase; letter-spacing: .09em; color: var(--text-muted); margin-bottom: 4px; }
+/* L'or ne sert qu'à deux choses : la deuxième tentative et la série. Seulement avant que la
+   teinte de verdict (vert/cramoisi) ne prenne le relais à la soumission. */
+.ds-morph--retry:not(.ds-morph--tinted) { background: var(--gold-50); box-shadow: 0 0 0 1.5px var(--gold-400), var(--shadow-raised); border-top: 4px solid var(--gold-500); }
+.ds-morph--retry:not(.ds-morph--tinted) .ds-morph__label { color: #5A3B00; }
 
-.ds-verdict {
-  display: grid;
-  place-items: center;
-  width: 56px;
-  height: 56px;
-  flex: 0 0 56px;
-  border-radius: var(--radius-pill);
-  color: #fff;
-  animation: ds-scale-in var(--dur-base) var(--ease-spring);
+.ds-morph__band {
+  height: 0; transform: scaleX(0); transform-origin: left center; background: var(--ink-200);
+  transition: height 200ms var(--ease-out), transform 360ms var(--ease-out), background-color 280ms linear;
 }
+.ds-morph--tinted .ds-morph__band { height: 10px; transform: scaleX(1); }
+.ds-morph--correct .ds-morph__band { background: var(--green-500); }
+.ds-morph--wrong .ds-morph__band { background: var(--crimson-500); }
 
-.ds-verdict--correct { background: var(--green-500); box-shadow: var(--shadow-correct); }
-.ds-verdict--wrong { background: var(--crimson-500); box-shadow: var(--shadow-wrong); }
+.ds-morph__head {
+  position: relative; padding: var(--card-pad-lg);
+  background: var(--paper-high); border-bottom: 1.5px solid transparent;
+  transition: padding 360ms var(--ease-out), background-color 300ms linear, border-bottom-color 300ms linear;
+}
+.ds-morph--tinted .ds-morph__head { padding: var(--space-5) var(--card-pad); }
+.ds-morph--tinted.ds-morph--correct .ds-morph__head { background: var(--green-50); border-bottom-color: var(--green-100); }
+.ds-morph--tinted.ds-morph--wrong .ds-morph__head { background: var(--crimson-50); border-bottom-color: var(--crimson-100); }
+
+.ds-morph__flood {
+  position: absolute; inset: 0; opacity: 0; pointer-events: none;
+  transform: scale(1, .22); transform-origin: center 80%;
+  transition: transform 360ms var(--ease-out), opacity 200ms linear;
+}
+.ds-morph--tinted .ds-morph__flood { opacity: 1; transform: scale(1, 1); }
+.ds-morph--correct .ds-morph__flood { background: var(--green-50); }
+.ds-morph--wrong .ds-morph__flood { background: var(--crimson-50); }
+
+.ds-morph__row { position: relative; display: flex; align-items: flex-start; gap: 0; transition: gap 360ms var(--ease-out); }
+.ds-morph--tinted .ds-morph__row { gap: var(--space-4); }
+
+.ds-morph__disc {
+  width: 0; height: 0; flex: 0 0 0; overflow: hidden; opacity: 0; transform: scale(.5);
+  border-radius: var(--radius-pill); display: grid; place-items: center; color: #fff;
+  transition: width 360ms var(--ease-out), flex-basis 360ms var(--ease-out), transform 360ms var(--ease-spring), opacity 180ms linear;
+}
+.ds-morph--tinted .ds-morph__disc { width: 56px; height: 56px; flex-basis: 56px; opacity: 1; transform: scale(1); }
+.ds-morph--correct .ds-morph__disc { background: var(--green-500); box-shadow: var(--shadow-correct); }
+.ds-morph--wrong .ds-morph__disc { background: var(--crimson-500); box-shadow: var(--shadow-wrong); }
+
+.ds-morph__col { min-width: 0; flex: 1; }
+.ds-morph__label { color: var(--text-faint); transition: color 240ms linear; }
+.ds-morph--tinted.ds-morph--correct .ds-morph__label { color: var(--green-600); }
+.ds-morph--tinted.ds-morph--wrong .ds-morph__label { color: var(--crimson-600); }
+
+.ds-morph__wordrows { display: grid; grid-template-rows: 1fr; transition: grid-template-rows 360ms var(--ease-out); }
+.ds-morph--morphed .ds-morph__wordrows { grid-template-rows: 0fr; }
+.ds-morph__wordclip { overflow: hidden; }
+.ds-morph__word {
+  text-align: center; padding-top: 12px; font-size: 42px; opacity: 1;
+  transition: font-size 360ms var(--ease-out), opacity 200ms linear;
+}
+.ds-morph--morphed .ds-morph__word { font-size: 24px; opacity: 0; }
+
+.ds-morph__field {
+  position: relative; margin-top: 18px; min-height: var(--tap-comfort);
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  border: 2px solid var(--ink-800); border-radius: var(--radius-md);
+  background: var(--paper-high); box-shadow: var(--inset-well); padding: 0 var(--space-4);
+  transition: margin-top 360ms var(--ease-out), min-height 360ms var(--ease-out), padding 360ms var(--ease-out),
+              border-radius 360ms var(--ease-out), border-color 220ms linear, background-color 220ms linear, box-shadow 220ms linear;
+}
+.ds-morph--committed.ds-morph--correct .ds-morph__field { border-color: var(--green-500); background: var(--green-50); }
+.ds-morph--committed.ds-morph--wrong .ds-morph__field { border-color: var(--crimson-500); background: var(--crimson-50); }
+.ds-morph--morphed .ds-morph__field { margin-top: 2px; min-height: 0; padding: 0; border-color: transparent; background: transparent; box-shadow: none; }
+
+.ds-morph__field input { flex: 1; min-width: 0; }
+.ds-morph__typedwrap { position: relative; display: none; align-items: baseline; }
+.ds-morph--committed .ds-morph__field input { display: none; }
+.ds-morph--committed .ds-morph__typedwrap { display: inline-flex; }
+.ds-morph__typed {
+  font: 600 18px/1.15 var(--font-display); letter-spacing: -.02em; color: var(--text-strong);
+  transition: font-size 360ms var(--ease-out), color 220ms linear;
+}
+.ds-morph--morphed .ds-morph__typed { font-size: 30px; }
+.ds-morph--morphed.ds-morph--wrong .ds-morph__typed { font-size: 17px; }
+.ds-morph--struck .ds-morph__typed { color: var(--text-muted); }
+.ds-morph__strike {
+  position: absolute; left: -2px; right: -2px; top: 54%; height: 2.5px; border-radius: 2px;
+  background: var(--crimson-500); transform: scaleX(0); transform-origin: left center;
+  transition: transform 240ms var(--ease-out);
+}
+.ds-morph--struck .ds-morph__strike { transform: scaleX(1); }
+
+.ds-morph__fdisc {
+  width: 0; height: 0; flex: 0 0 0; overflow: hidden; opacity: 0; transform: scale(.4);
+  border-radius: var(--radius-pill); display: grid; place-items: center; color: #fff;
+  transition: width 200ms var(--ease-out), flex-basis 200ms var(--ease-out), transform 300ms var(--ease-spring), opacity 160ms linear;
+}
+.ds-morph--committed .ds-morph__fdisc { width: 30px; height: 30px; flex-basis: 30px; opacity: 1; transform: scale(1); }
+.ds-morph--correct .ds-morph__fdisc { background: var(--green-500); }
+.ds-morph--wrong .ds-morph__fdisc { background: var(--crimson-500); }
+
+.ds-morph__answerrows, .ds-morph__posrows {
+  display: grid; grid-template-rows: 0fr; transition: grid-template-rows 360ms var(--ease-out);
+}
+.ds-morph--morphed.ds-morph--wrong .ds-morph__answerrows { grid-template-rows: 1fr; }
+.ds-morph--morphed .ds-morph__posrows { grid-template-rows: 1fr; }
+.ds-morph__answerclip, .ds-morph__posclip {
+  overflow: hidden; opacity: 0; transform: translateY(8px);
+  transition: opacity 240ms linear, transform 300ms var(--ease-out);
+}
+.ds-morph--morphed.ds-morph--wrong .ds-morph__answerclip { opacity: 1; transform: translateY(0); }
+.ds-morph--morphed .ds-morph__posclip { opacity: 1; transform: translateY(0); transition: opacity 220ms linear; }
+
+.ds-morph__blocksrows { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 340ms var(--ease-out); }
+.ds-morph--unfolded .ds-morph__blocksrows { grid-template-rows: 1fr; }
+.ds-morph__blocksclip { overflow: hidden; opacity: 0; transition: opacity 260ms linear; }
+.ds-morph--unfolded .ds-morph__blocksclip { opacity: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ds-morph, .ds-morph__band, .ds-morph__head, .ds-morph__flood, .ds-morph__row, .ds-morph__disc,
+  .ds-morph__wordrows, .ds-morph__word, .ds-morph__field, .ds-morph__typed, .ds-morph__strike,
+  .ds-morph__fdisc, .ds-morph__answerrows, .ds-morph__posrows, .ds-morph__answerclip,
+  .ds-morph__posclip, .ds-morph__blocksrows, .ds-morph__blocksclip, .ds-morph__label {
+    transition-duration: 1ms;
+  }
+}
 
 /* Conséquence Leitner : la réponse fausse barrée à gauche, la transition de niveau/phase en
    pastilles reliées par une flèche à droite — jamais de phrase à lire. */

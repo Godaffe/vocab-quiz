@@ -57,7 +57,7 @@ export function cardStackHtml(remaining, innerHtml, { stretch = false } = {}) {
   const under = Math.max(0, Math.min(3, remaining));
   const layers = Array.from({ length: under }, (_, i) => {
     const d = under - i;
-    return `<div class="ds-stack__under" style="transform:translateY(${d * 8}px) scale(${1 - d * 0.025});opacity:${1 - d * 0.25}"></div>`;
+    return `<div class="ds-stack__under" data-depth="${d}" style="transform:translateY(${d * 8}px) scale(${1 - d * 0.025});opacity:${1 - d * 0.25}"></div>`;
   }).join('');
   const stack = stretch ? ' style="flex:1;min-height:0"' : '';
   return `<div class="ds-stack"${stack}>${layers}<div class="ds-stack__live">${innerHtml}</div></div>`;
@@ -101,30 +101,74 @@ function wordInfoHtml({ registre, sens, usage }) {
   return `<div class="ds-wordinfo">${registreBadge}${sensRow}${usageRow}</div>`;
 }
 
-// --- carte question ----------------------------------------------------------
-// Le contexte (ex. « au four ») ne s'affiche que sous le mot posé en question : il
-// désambiguë ce qui est demandé, il n'est jamais attendu dans la réponse tapée.
-export function questionCardHtml({ instruction, question, badge = '', hint = '', slot = '', context = '', retry = false, retryLabel = 'Deuxième tentative' }) {
-  return `
-    <div class="ds-qcard${retry ? ' ds-qcard--retry' : ''}">
-      <div class="ds-qcard__head">
-        <span class="ds-prompt">${escapeHtml(retry ? retryLabel : instruction)}</span>
-        ${badge}
-      </div>
-      <div class="ds-word" style="text-align:center">${escapeHtml(question)}</div>
-      ${context ? `<div class="ds-context">(${escapeHtml(context)})</div>` : ''}
-      ${hint ? `<div class="ds-qcard__hint">${hint}</div>` : ''}
-      ${slot ? `<div class="ds-qcard__slot">${slot}</div>` : ''}
-    </div>
-  `;
-}
-
 export function answerFieldHtml({ placeholder = 'Ta réponse' } = {}) {
   // enterkeyhint="go" : iOS remplace la touche « retour » par une touche d'action colorée,
   // ce qui permet de valider sans jamais quitter le clavier.
   return `<input type="text" id="answer-input" class="ds-field" placeholder="${escapeHtml(placeholder)}"
     autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
     enterkeyhint="go" inputmode="text" />`;
+}
+
+// --- carte à fusion : question → résultat ------------------------------------
+// Un seul élément traverse toute la question : rien n'est remplacé. Voir le commentaire de
+// bloc CSS « carte à fusion » dans style.css pour la mécanique des quatre temps (commit,
+// trait si faux, morphose, dépli). Cette fonction ne rend que le squelette initial (phase
+// « question ») ; runMorphCard (ci-dessous) pilote les classes d'état à la soumission.
+export function morphCardHtml({
+  instruction, question, badge = '', hint = '', context = '', resultContext = context, retry = false, retryLabel = 'Deuxième tentative',
+  answer = '', pos = '', translation = '', example = '', registre, sens, usage,
+}) {
+  return `
+    <div class="ds-morph${retry ? ' ds-morph--retry' : ''}" id="morph-card">
+      <div class="ds-morph__band"></div>
+      <div class="ds-morph__head">
+        <div class="ds-morph__flood"></div>
+        <div class="ds-morph__row">
+          <span class="ds-morph__disc" id="m-disc"></span>
+          <div class="ds-morph__col">
+            <div class="ds-prompt ds-morph__label" id="m-label">${escapeHtml(retry ? retryLabel : instruction)}</div>
+            ${badge}
+            <div class="ds-morph__wordrows">
+              <div class="ds-morph__wordclip"><div class="ds-word ds-morph__word">${escapeHtml(question)}</div></div>
+            </div>
+            ${hint ? `<div class="ds-qcard__hint">${hint}</div>` : ''}
+            ${context ? `<div class="ds-context" id="m-qcontext">(${escapeHtml(context)})</div>` : ''}
+            <div class="ds-morph__field" id="m-field">
+              ${answerFieldHtml()}
+              <span class="ds-morph__typedwrap">
+                <span class="ds-morph__typed" id="m-typed"></span>
+                <span class="ds-morph__strike"></span>
+              </span>
+              <span class="ds-morph__fdisc" id="m-fdisc"></span>
+            </div>
+            <div class="ds-morph__answerrows">
+              <div class="ds-morph__answerclip"><div class="ds-result__answer" style="padding-top:6px">${escapeHtml(answer)}</div></div>
+            </div>
+            ${pos ? `
+            <div class="ds-morph__posrows">
+              <div class="ds-morph__posclip" style="padding-top:8px"><span class="ds-pos">${escapeHtml(pos)}</span></div>
+            </div>` : ''}
+          </div>
+        </div>
+      </div>
+      <div class="ds-morph__blocksrows">
+        <div class="ds-morph__blocksclip">
+          ${translation ? `
+          <div class="ds-result__translation" id="m-translation">
+            <div class="ds-result__blocklabel">Traduction</div>
+            <div class="ds-result__blockvalue">${escapeHtml(translation)}</div>
+            ${resultContext ? `<div class="ds-context" id="m-rcontext" style="display:none">(${escapeHtml(resultContext)})</div>` : ''}
+            ${wordInfoHtml({ registre, sens, usage })}
+          </div>` : ''}
+          ${example ? `
+          <div class="ds-result__example">
+            <div class="ds-result__blocklabel">Exemple / règle</div>
+            <div class="ds-result__blockvalue">${escapeHtml(example)}</div>
+          </div>` : ''}
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 // Indice masqué : chaque mot montre sa première et sa dernière lettre, le reste devient des
@@ -140,45 +184,6 @@ export function hintMaskHtml(answer) {
     return `<span class="ds-hint__word">${slots}</span>`;
   }).join('');
   return `<div class="ds-hint">${words}</div>`;
-}
-
-// --- carte résultat ----------------------------------------------------------
-// Trois temps de lecture : la bande + le disque (juste ou faux), la réponse attendue en
-// plus gros que tout le reste, puis la traduction et l'exemple en blocs distincts. Le
-// contexte, quand fourni, précise la traduction juste sous elle — l'appelant ne le passe
-// que sur une réponse fausse, pour ne pas répéter ce qui vient déjà d'être vu en question.
-export function resultCardHtml({ correct, answer, pos, translation, context, registre, sens, usage, example }) {
-  const deep = correct ? 'var(--green-600)' : 'var(--crimson-600)';
-  const mid = correct ? 'var(--green-500)' : 'var(--crimson-500)';
-  const soft = correct ? 'var(--green-50)' : 'var(--crimson-50)';
-  const line = correct ? 'var(--green-100)' : 'var(--crimson-100)';
-  const mark = icon(correct ? 'check' : 'x', { size: 30, color: '#fff', stroke: 3.4 });
-
-  return `
-    <div class="ds-result" id="result-card">
-      <div class="ds-result__band" style="background:${mid}"></div>
-      <div class="ds-result__head" style="background:${soft};border-bottom-color:${line}">
-        <span class="ds-verdict ds-verdict--${correct ? 'correct' : 'wrong'}">${mark}</span>
-        <div class="ds-result__headtext">
-          <div class="ds-result__verdictlabel" style="color:${deep}">${correct ? 'Correct' : 'Réponse attendue'}</div>
-          <div class="ds-result__answer">${escapeHtml(answer)}</div>
-          ${pos ? `<span class="ds-pos">${escapeHtml(pos)}</span>` : ''}
-        </div>
-      </div>
-      ${translation ? `
-        <div class="ds-result__translation" style="background:${deep}">
-          <div class="ds-result__blocklabel">Traduction</div>
-          <div class="ds-result__blockvalue">${escapeHtml(translation)}</div>
-          ${context ? `<div class="ds-context">(${escapeHtml(context)})</div>` : ''}
-          ${wordInfoHtml({ registre, sens, usage })}
-        </div>` : ''}
-      ${example ? `
-        <div class="ds-result__example" style="border-left-color:${mid}">
-          <div class="ds-result__blocklabel">Exemple / règle</div>
-          <div class="ds-result__blockvalue">${escapeHtml(example)}</div>
-        </div>` : ''}
-    </div>
-  `;
 }
 
 // Ligne de conséquence Leitner, sous la carte ratée : la réponse fausse barrée, puis le
@@ -270,4 +275,96 @@ export function onSwipe(el, { onLeft, onRight, onUp } = {}) {
       onUp?.();
     }
   });
+}
+
+// --- éclats (objectif du jour) ------------------------------------------------
+
+// Direction radiale : un éclat posé sur le contour d'une boîte w×h au point (x%,y%) fuit le
+// centre de cette boîte — le prolongement de toutes les trajectoires se coupe donc en un seul
+// point, son centre. `x`/`y` sont des pourcentages de la boîte, pas des pixels.
+function radial(w, h, x, y) {
+  const dx = (x / 100) * w - w / 2;
+  const dy = (y / 100) * h - h / 2;
+  return Math.round((Math.atan2(dx, -dy) * 180) / Math.PI);
+}
+
+// Un éclat : un court trait arrondi qui naît sur le contour et file vers l'extérieur en
+// s'effaçant — vol et effacement sont une seule courbe (@keyframes ds-eclat-*, une déclinaison
+// par distance parcourue). `pos` = { x, y, dist, len, width, delay } en % de boîte / px / ms.
+function eclatEl(pos, color, boxW, boxH, scale) {
+  const wrap = document.createElement('span');
+  wrap.className = 'eclat';
+  wrap.style.left = `${pos.x}%`;
+  wrap.style.top = `${pos.y}%`;
+  wrap.style.transform = `rotate(${radial(boxW, boxH, pos.x, pos.y)}deg)`;
+  const bar = document.createElement('i');
+  bar.style.width = `${pos.width}px`;
+  bar.style.height = `${pos.len}px`;
+  bar.style.marginLeft = `${-pos.width / 2}px`;
+  bar.style.background = color;
+  bar.style.animation = `ds-eclat-${pos.dist} ${Math.round(560 * scale)}ms cubic-bezier(.2,.75,.25,1) ${Math.round(pos.delay * scale)}ms both`;
+  wrap.appendChild(bar);
+  return wrap;
+}
+
+// Fait naître une couronne d'éclats dans `host` (un `.eclat-host` posé en `position:absolute;
+// inset:0` sur la boîte de référence) puis la retire une fois tous les éclats effacés — ils
+// « n'existent que pendant l'éclat », une relance repart donc toujours de zéro.
+export function spawnShards(host, positions, color, boxW, boxH, scale = 1) {
+  if (!host) return;
+  host.innerHTML = '';
+  const frag = document.createDocumentFragment();
+  let maxEnd = 0;
+  positions.forEach((pos) => {
+    frag.appendChild(eclatEl(pos, color, boxW, boxH, scale));
+    maxEnd = Math.max(maxEnd, (pos.delay + 560) * scale);
+  });
+  host.appendChild(frag);
+  setTimeout(() => { host.innerHTML = ''; }, Math.round(maxEnd) + 30);
+}
+
+const PRESS_CLASS = 'ds-flip--press';
+const THROW_MS = 220;
+
+// Anticipation : la carte s'incline dès la prise et se redresse au relâchement — ou si le
+// pointeur quitte la zone sans rien déclencher. Attaché sur la même zone que onSwipe (la
+// .session-body entière), pour que le retour visuel arrive même quand le pouce démarre à côté
+// de la carte.
+export function onCardPress(zone, card) {
+  const release = () => card.classList.remove(PRESS_CLASS);
+  zone.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('input, textarea, button')) return;
+    card.classList.add(PRESS_CLASS);
+  });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach((type) => zone.addEventListener(type, release));
+}
+
+// Sortie : la carte part vers le haut et la pile avance d'un cran. La promesse n'est tenue
+// qu'à la fin de l'animation — l'appelant ne rend la carte suivante qu'après, sinon les deux
+// se chevauchent dans le même emplacement.
+export function throwCardOut(card) {
+  return new Promise((resolve) => {
+    card.classList.remove(PRESS_CLASS);
+    card.classList.add('ds-flip--out');
+    const stack = card.closest('.ds-stack');
+    if (stack) advanceStack(stack);
+    setTimeout(resolve, THROW_MS);
+  });
+}
+
+// Chaque couche de la pile monte d'un cran : la première prend la place de la carte partante.
+export function advanceStack(stack) {
+  stack.querySelectorAll('.ds-stack__under').forEach((el) => {
+    const d = Math.max(0, Number(el.dataset.depth) - 1);
+    el.style.transform = `translateY(${d * 8}px) scale(${1 - d * 0.025})`;
+    el.style.opacity = d === 0 ? '1' : String(1 - d * 0.25);
+  });
+}
+
+// Entrée : la carte fraîchement rendue monte de 22 px. Deux trames sont nécessaires — la
+// première pose l'état de départ sans transition, la seconde l'enlève pour que la transition
+// de base s'applique. Une seule trame et le navigateur regroupe les deux états en un seul.
+export function enterCard(card) {
+  card.classList.add('ds-flip--in');
+  requestAnimationFrame(() => requestAnimationFrame(() => card.classList.remove('ds-flip--in')));
 }

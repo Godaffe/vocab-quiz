@@ -11,8 +11,9 @@ import {
   countReviewedToday, getProgressRow, getLearnedToday, getStartedToday,
 } from './leitner.js';
 import {
-  escapeHtml, sessionHeaderHtml, barHtml, dotsProgressHtml, cardStackHtml, flipCardHtml, questionCardHtml,
-  answerFieldHtml, hintMaskHtml, resultCardHtml, consequenceHtml, statPillHtml, onSwipe, onCardTap,
+  escapeHtml, sessionHeaderHtml, barHtml, dotsProgressHtml, cardStackHtml, flipCardHtml, morphCardHtml,
+  hintMaskHtml, consequenceHtml, statPillHtml, onSwipe, onCardTap,
+  onCardPress, throwCardOut, enterCard, advanceStack, spawnShards,
 } from './card.js';
 import { icon } from './icons.js';
 
@@ -125,7 +126,60 @@ function flatTileHtml({ count, title, glyphName, glyphColor, doneTitle, doneStat
   `;
 }
 
-export async function renderHome(container, { onStartHard, onStartLearning, onStartReview, onStartFailedWords }) {
+// Positions des éclats en % de la boîte de référence (voir radial() dans card.js) : une
+// couronne le long des quatre bords, plus denses en haut/bas (où le regard se pose) que sur
+// les côtés. `dist`/`len` alternent pour casser la régularité ; `delay` étage le bord du bas
+// derrière celui du haut de quelques dizaines de ms.
+const STREAK_SHARD_POS = [
+  ...[14, 32, 50, 68, 86].map((x, i) => ({ x, y: 0, dist: i % 2 ? 34 : 50, len: i % 2 ? 8 : 11, width: 2.5, delay: 0 })),
+  ...[14, 32, 50, 68, 86].map((x, i) => ({ x, y: 100, dist: i % 2 ? 34 : 50, len: i % 2 ? 8 : 11, width: 2.5, delay: 40 })),
+  { x: 0, y: 50, dist: 34, len: 9, width: 2.5, delay: 20 },
+  { x: 100, y: 50, dist: 34, len: 9, width: 2.5, delay: 20 },
+];
+const HEADER_SHARD_POS = [
+  ...[8, 22, 36, 50, 64, 78, 92].map((x, i) => ({ x, y: 0, dist: i % 2 ? 50 : 82, len: i % 2 ? 11 : 16, width: 3, delay: i % 2 ? 40 : 0 })),
+  ...[8, 22, 36, 50, 64, 78, 92].map((x, i) => ({ x, y: 100, dist: i % 2 ? 50 : 82, len: i % 2 ? 11 : 16, width: 3, delay: i % 2 ? 40 : 0 })),
+  { x: 0, y: 50, dist: 50, len: 12, width: 3, delay: 60 },
+  { x: 100, y: 50, dist: 50, len: 12, width: 3, delay: 60 },
+];
+
+// Objectif du jour tout juste atteint, au retour de la séance qui a vidé la dernière file :
+// le badge de série éclate seul (or), puis 300 ms plus tard le bloc d'en-tête grossit de 2 %,
+// passe au vert et éclate à son tour, avant de se reposer exactement à sa taille d'origine —
+// sur le vert, qui y reste. `prefers-reduced-motion` saute directement à l'état posé.
+function playDailyGoalBurst(header, badge) {
+  if (!header || !badge) return;
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+    header.classList.add('home-header--complete');
+    header.classList.remove('home-header--burst');
+    return;
+  }
+  const headerRect = header.getBoundingClientRect();
+  const badgeRect = badge.getBoundingClientRect();
+  const headerShards = header.querySelector('#header-shards');
+  const flash = header.querySelector('.home-header__flash');
+  const badgeShards = badge.querySelector('#streak-shards');
+  const GOLD = 'var(--gold-400)';
+  const GREEN = 'var(--green-500)';
+
+  setTimeout(() => {
+    // Le badge de série éclate seul.
+    badge.classList.add('ds-streak--pop');
+    spawnShards(badgeShards, STREAK_SHARD_POS, GOLD, badgeRect.width, badgeRect.height, 1);
+    setTimeout(() => badge.classList.remove('ds-streak--pop'), 160);
+
+    setTimeout(() => {
+      // 300 ms plus tard : le bloc entier grossit, vire au vert, éclate à son tour.
+      header.classList.add('home-header--complete', 'home-header--swell');
+      if (flash) flash.classList.add('home-header__flash--on');
+      spawnShards(headerShards, HEADER_SHARD_POS, GREEN, headerRect.width, headerRect.height, 1);
+      setTimeout(() => header.classList.remove('home-header--swell'), 180);
+      setTimeout(() => flash?.classList.remove('home-header__flash--on'), 140);
+    }, 300);
+  }, 350);
+}
+
+export async function renderHome(container, { onStartHard, onStartLearning, onStartReview, onStartFailedWords, celebrate = false }) {
   container.innerHTML = '<div class="loading-block"><span class="ds-spinner"></span><div class="loading-msg">Chargement de la session</div></div>';
   const today = todayISO();
   const session = await startSession();
@@ -150,7 +204,15 @@ export async function renderHome(container, { onStartHard, onStartLearning, onSt
   // La journée n'est « complète » que si les deux files sont vides — jamais entre les deux,
   // et jamais gardé en mémoire d'une visite à l'autre : recalculé à chaque rendu de l'accueil.
   const dayComplete = newRemaining === 0 && reviewRemaining === 0;
+  // L'éclat ne joue qu'à l'instant précis où la journée bascule en complète (retour de la
+  // séance qui vient de vider la dernière file) — jamais sur une simple revisite de l'accueil
+  // un jour déjà bouclé, où l'état vert s'affiche directement, sans transition.
+  const burst = celebrate && dayComplete;
   const now = new Date();
+
+  const streakHtml = `
+    <span class="ds-streak${burst ? ' ds-streak--burst' : ''}">${icon('flame', { size: 17, color: '#2B1F00', stroke: 2.4 })}<span class="ds-streak__n">${streak}</span><span class="ds-streak__u">j</span>${burst ? '<span class="eclat-host" id="streak-shards"></span>' : ''}</span>
+  `;
 
   const headerInner = dayComplete ? `
     <div class="home-header__row">
@@ -158,7 +220,7 @@ export async function renderHome(container, { onStartHard, onStartLearning, onSt
         <span class="home-header__eyebrow">${icon('check', { size: 13, color: '#FAF7EF', stroke: 3.2 })}<span>Journée complète</span></span>
         <span class="home-header__date">${escapeHtml(formatDateFrLong(now))}</span>
       </div>
-      <span class="ds-streak">${icon('flame', { size: 17, color: '#2B1F00', stroke: 2.4 })}<span class="ds-streak__n">${streak}</span><span class="ds-streak__u">j</span></span>
+      ${streakHtml}
     </div>
     <div class="home-header__next">${icon('clock', { size: 15, color: '#FDFBF5', stroke: 2.3 })}<span>Prochaine session demain</span></div>
   ` : `
@@ -167,12 +229,17 @@ export async function renderHome(container, { onStartHard, onStartLearning, onSt
         <span class="home-header__eyebrow">${escapeHtml(formatWeekdayFr(now))}</span>
         <span class="home-header__date">${escapeHtml(formatDateFrLong(now))}</span>
       </div>
-      <span class="ds-streak">${icon('flame', { size: 17, color: '#2B1F00', stroke: 2.4 })}<span class="ds-streak__n">${streak}</span><span class="ds-streak__u">j</span></span>
+      ${streakHtml}
     </div>
   `;
 
+  // En temps normal, la classe --complete est posée dès le rendu. En éclat, elle est retenue
+  // (le bandeau reste sur --stone-500) jusqu'à ce que playDailyGoalBurst l'ajoute au bon
+  // instant — c'est elle qui fait basculer la couleur, pas ce rendu initial.
+  const headerClass = burst ? 'home-header--burst' : dayComplete ? 'home-header--complete' : '';
+
   container.innerHTML = `
-    <div class="home-header${dayComplete ? ' home-header--complete' : ''}">${headerInner}</div>
+    <div class="home-header${headerClass ? ` ${headerClass}` : ''}" id="home-header">${headerInner}${burst ? '<span class="home-header__flash"></span><span class="eclat-host" id="header-shards"></span>' : ''}</div>
 
     <div class="screen-scroll">
       <div class="stat-row">
@@ -228,6 +295,10 @@ export async function renderHome(container, { onStartHard, onStartLearning, onSt
   };
   requestAnimationFrame(paintProgress);
   setTimeout(paintProgress, 250);
+
+  if (burst) {
+    playDailyGoalBurst(container.querySelector('#home-header'), container.querySelector('.ds-streak'));
+  }
 
   if (session.hardItems.length > 0) {
     container.querySelector('#start-hard-btn').addEventListener('click', () => onStartHard(session));
@@ -329,31 +400,47 @@ function discoverCard(area, { word, pos, example, translation, context, registre
       </div>
     `;
     const card = area.querySelector('#flip-card');
+    const zone = area.querySelector('.session-body');
     const flip = () => card.classList.toggle('ds-flip--back');
+
+    // Entrée de la carte (remonte de 14px) et inclinaison à la prise — l'anticipation courte
+    // qui annonce le retournement ou le passage avant même que le geste soit achevé.
+    enterCard(card);
+    onCardPress(zone, card);
+
+    // `leaving` garde la sortie unique : pendant les 220 ms d'animation, un second geste (ou un
+    // second clic sur le bouton) ne doit ni relancer l'animation ni tenir la promesse deux fois.
+    let leaving = false;
+    const next = () => {
+      if (leaving) return;
+      leaving = true;
+      throwCardOut(card).then(resolve);
+    };
+
     // Le glissement (haut ou latéral) couvre toute la zone entre l'en-tête et le bouton, pas
     // seulement la carte — plus simple à déclencher au pouce sans viser précisément la carte.
     // Le tap pour retourner reste, lui, propre à la carte.
-    onSwipe(area.querySelector('.session-body'), { onLeft: flip, onRight: flip, onUp: () => resolve() });
+    onSwipe(zone, { onLeft: flip, onRight: flip, onUp: next });
     onCardTap(card, flip);
-    area.querySelector('#next-btn').addEventListener('click', () => resolve());
+    area.querySelector('#next-btn').addEventListener('click', next);
   });
 }
 
-// Question : champ auto-focus, validation à la touche Entrée ou au bouton. Une mauvaise
-// réponse fait passer le champ au cramoisi avec un écart de 4 px, une seule fois, avant
-// que la carte résultat ne prenne le relais. Glisser la carte vers la droite (ou le bouton
-// « Passer ») abandonne la question sans la noter — le mot n'avance ni ne recule.
-function questionCard(area, { instruction, question, hint, badge, context, retry = false, retryLabel, remaining = 0, checkFn }) {
+// Carte à fusion : la carte de question devient la carte de résultat sans être remplacée
+// (voir le commentaire de bloc CSS « carte à fusion » dans style.css). Champ auto-focus,
+// validation à la touche Entrée ou au bouton. Glisser la carte vers la droite (ou le bouton
+// « Passer ») abandonne la question sans la noter — le mot n'avance ni ne recule. `getConsequence`
+// (peut être async — elle est attendue) calcule la conséquence Leitner à partir de la réponse
+// et du verdict, une fois connus ; `resultContext` par défaut sur `context` sauf si l'appelant
+// veut des textes distincts entre l'annotation sous la question et sa reprise dans le résultat.
+function morphCard(area, {
+  instruction, question, hint, badge, context, resultContext = context, retry = false, retryLabel, remaining = 0, checkFn,
+  answer: expected, pos, translation, example, registre, sens, usage, getConsequence,
+}) {
   return new Promise((resolve) => {
-    const card = questionCardHtml({
-      instruction,
-      question,
-      badge,
-      retry,
-      retryLabel,
-      hint: hint || '',
-      context: context || '',
-      slot: answerFieldHtml(),
+    const card = morphCardHtml({
+      instruction, question, badge, retry, retryLabel, hint: hint || '', context: context || '', resultContext: resultContext || '',
+      answer: expected, pos, translation, example, registre, sens, usage,
     });
     area.innerHTML = `
       <div class="session-body">
@@ -365,23 +452,17 @@ function questionCard(area, { instruction, question, hint, badge, context, retry
       </div>
     `;
 
+    const root = area.querySelector('#morph-card');
     const input = area.querySelector('#answer-input');
-    const button = area.querySelector('#submit-btn');
+    const typed = area.querySelector('#m-typed');
+    const label = area.querySelector('#m-label');
+    const disc = area.querySelector('#m-disc');
+    const fdisc = area.querySelector('#m-fdisc');
+    const rcontext = area.querySelector('#m-rcontext');
+    const submitBtn = area.querySelector('#submit-btn');
     const skipBtn = area.querySelector('#skip-btn');
+    const foot = area.querySelector('.session-foot');
     let settled = false;
-
-    const submit = async () => {
-      if (settled) return;
-      settled = true;
-      const answer = input.value;
-      const isCorrect = checkFn(answer);
-      input.classList.add(isCorrect ? 'ds-field--correct' : 'ds-field--wrong');
-      input.blur();
-      button.disabled = true;
-      skipBtn.disabled = true;
-      await wait(isCorrect ? 240 : 420);
-      resolve({ answer, isCorrect });
-    };
 
     const skip = () => {
       if (settled) return;
@@ -389,7 +470,52 @@ function questionCard(area, { instruction, question, hint, badge, context, retry
       resolve({ skipped: true });
     };
 
-    button.addEventListener('click', submit);
+    const submit = async () => {
+      if (settled) return;
+      settled = true;
+      const raw = input.value;
+      const isCorrect = checkFn(raw);
+      const verdictIcon = icon(isCorrect ? 'check' : 'x', { size: 30, color: '#fff', stroke: 3.4 });
+      const verdictIconSm = icon(isCorrect ? 'check' : 'x', { size: 18, color: '#fff', stroke: 3.4 });
+      const consequence = getConsequence ? await getConsequence(raw, isCorrect) : null;
+
+      typed.textContent = raw;
+      disc.innerHTML = verdictIcon;
+      fdisc.innerHTML = verdictIconSm;
+      input.disabled = true;
+      submitBtn.disabled = true;
+      skipBtn.disabled = true;
+      root.classList.add('ds-morph--committing', 'ds-morph--committed', isCorrect ? 'ds-morph--correct' : 'ds-morph--wrong');
+
+      await wait(200); // commit
+      root.classList.remove('ds-morph--committing');
+      root.classList.add('ds-morph--tinted');
+      label.textContent = isCorrect ? 'Correct' : 'Réponse attendue';
+
+      if (!isCorrect) {
+        root.classList.add('ds-morph--struck');
+        await wait(240); // trait
+      }
+
+      root.classList.add('ds-morph--morphed');
+      if (rcontext && !isCorrect) rcontext.style.display = '';
+      await wait(360); // morphose
+
+      root.classList.add('ds-morph--unfolded');
+      if (consequence) {
+        const consequenceHtmlBlock = typeof consequence === 'string'
+          ? `<div class="ds-alert ds-alert--success">${escapeHtml(consequence)}</div>`
+          : consequenceHtml(consequence);
+        area.querySelector('.session-body').insertAdjacentHTML('beforeend', consequenceHtmlBlock);
+      }
+      foot.innerHTML = `<button type="button" class="ds-btn ds-btn--hero${isCorrect ? '' : ' ds-btn--dark'}" id="next-btn">${isCorrect ? 'Suivant' : 'Réessayer'}</button>`;
+      const finish = () => resolve({ answer: raw, isCorrect });
+      // Un clic n'importe où sur la carte suffit à continuer : plus besoin de viser le bouton.
+      onCardTap(root, finish);
+      foot.querySelector('#next-btn').addEventListener('click', finish);
+    };
+
+    submitBtn.addEventListener('click', submit);
     skipBtn.addEventListener('click', skip);
     // Le glissement latéral pour passer fonctionne sur toute la zone entre l'en-tête et les
     // boutons, pas seulement la carte de question — le champ de saisie garde son geste natif
@@ -398,9 +524,6 @@ function questionCard(area, { instruction, question, hint, badge, context, retry
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') submit();
     });
-    input.addEventListener('input', () => {
-      input.classList.remove('ds-field--correct', 'ds-field--wrong');
-    });
     // Le clavier s'ouvre par défaut dès que la question s'affiche, sans avoir à taper le champ
     // au préalable. L'appel reste synchrone (pas de rAF/setTimeout) : iOS n'ouvre le clavier
     // sur un focus() programmatique que s'il est rattaché sans détour au geste utilisateur qui
@@ -408,30 +531,6 @@ function questionCard(area, { instruction, question, hint, badge, context, retry
     // évite que la mise au point ne déclenche un scroll natif — déjà bloqué par ailleurs via
     // touch-action:none sur la zone de session, mais la souris/le clavier physique y échappent.
     input.focus({ preventScroll: true });
-  });
-}
-
-// Résultat : bande + disque, la réponse attendue en plus gros que tout, la traduction et
-// l'exemple en blocs distincts. Sur un échec, la conséquence Leitner est écrite en clair.
-function resultCard(area, { isCorrect, answer, pos, translation, context, registre, sens, usage, example, consequence, actionLabel }) {
-  // Un texte simple reste une note de réussite (ex. sortie des mots compliqués) — la
-  // pastille avant/après barrée est réservée aux échecs, elle n'aurait pas de sens ici.
-  const consequenceBlock = !consequence ? ''
-    : typeof consequence === 'string' ? `<div class="ds-alert ds-alert--success">${escapeHtml(consequence)}</div>`
-    : consequenceHtml(consequence);
-  return new Promise((resolve) => {
-    area.innerHTML = `
-      <div class="session-body">
-        ${resultCardHtml({ correct: isCorrect, answer, pos, translation, context, registre, sens, usage, example })}
-        ${consequenceBlock}
-      </div>
-      <div class="session-foot">
-        <button type="button" class="ds-btn ds-btn--hero${isCorrect ? '' : ' ds-btn--dark'}" id="next-btn">${escapeHtml(actionLabel)}</button>
-      </div>
-    `;
-    // Un clic n'importe où sur la carte suffit à continuer : plus besoin de viser le bouton.
-    onCardTap(area.querySelector('#result-card'), () => resolve());
-    area.querySelector('#next-btn').addEventListener('click', () => resolve());
   });
 }
 
@@ -484,7 +583,11 @@ async function askUntilCorrect(container, item, {
     const retry = forceRetry || attempt > 0;
     // L'indice n'apparaît qu'à la reprise : la première tentative se joue sans filet.
     const hint = attempt > 0 ? hintMaskHtml(expected) : '';
-    const result = await questionCard(container, {
+    // Seule la première tentative décide du sort de l'item : c'est la seule qui affiche la
+    // conséquence. Le contexte, lui, est déjà vu sous la question ; dans le bloc traduction
+    // (une fois morphé) il ne revient que si la réponse était fausse — morphCard s'en charge.
+    const currentAttempt = attempt;
+    const result = await morphCard(container, {
       instruction,
       question,
       badge,
@@ -496,29 +599,18 @@ async function askUntilCorrect(container, item, {
       context,
       remaining: Math.max(0, total - index - 1),
       checkFn,
-    });
-    if (result.skipped) throw new ItemSkipped();
-    const { answer, isCorrect } = result;
-    if (first === null) first = isCorrect;
-
-    await resultCard(container, {
-      isCorrect,
       answer: expected,
       pos,
       translation: `${question} = ${expected}`,
-      // Le contexte a déjà été vu sur la carte question ; sur la carte résultat il ne
-      // revient que si la réponse était fausse, pour expliquer la nuance ratée. Registre/sens/
-      // usage ne sont pas liés à un échec — ils restent utiles même sur une bonne réponse.
-      context: !isCorrect ? context : null,
       registre,
       sens,
       usage,
       example,
-      // Seule la première tentative décide du sort de l'item : c'est la seule qui affiche
-      // la conséquence.
-      consequence: !isCorrect && attempt === 0 ? failureConsequence(item, answer, options) : null,
-      actionLabel: isCorrect ? 'Suivant' : 'Réessayer',
+      getConsequence: (answer, isCorrect) => (!isCorrect && currentAttempt === 0 ? failureConsequence(item, answer, options) : null),
     });
+    if (result.skipped) throw new ItemSkipped();
+    const { isCorrect } = result;
+    if (first === null) first = isCorrect;
     if (isCorrect) break;
     attempt += 1;
   }
@@ -657,73 +749,59 @@ async function runHardModeRound(container, item, targetPhase, tally) {
   while (true) {
     const { instruction, question, expected, hint, context, checkFn } = hardModeQuestion(item, targetPhase);
     const pos = item.item_type === 'vocabulaire' ? item.type : null;
-    const attemptResult = await questionCard(container, {
+    // Rempli par getConsequence (elle seule connaît le verdict et le résultat de la notation
+    // Leitner) puis lu une fois morphCard résolue — `loop: true` signale qu'il faut reposer la
+    // même phase (déjà au plancher), sinon c'est la décision renvoyée par cette fonction.
+    let outcome = null;
+
+    const result = await morphCard(container, {
       instruction,
       question,
       hint,
       // Le contexte n'annote que le mot français ; il ne s'affiche sous la question qu'en
-      // phase 2/3, où c'est le français qui est demandé (en phase 1 c'est l'anglais).
+      // phase 2/3, où c'est le français qui est demandé (en phase 1 c'est l'anglais) — mais
+      // reste montré dans le résultat même en phase 1, où le français révélé en est la réponse.
       context: targetPhase === 1 ? null : context,
-      // La phase est déjà nommée par le badge de l'en-tête : pas deux fois sur le même écran.
-      checkFn,
-    });
-    if (attemptResult.skipped) throw new ItemSkipped();
-    const { answer, isCorrect } = attemptResult;
-    tally.answered += 1;
-    if (isCorrect) tally.correct += 1;
-    else tally.wrong += 1;
-
-    if (isCorrect && targetPhase === 3) {
-      await gradeHardAttempt(item, 3, true);
-      tally.exitedHard += 1;
-      tally.phasesCleared += 1;
-      await resultCard(container, {
-        isCorrect: true,
-        answer: expected,
-        pos,
-        translation: `${question} = ${expected}`,
-        example: item.example || item.explication,
-        consequence: 'Sorti du mode compliqué : le mot revient demain en découverte',
-        actionLabel: 'Suivant',
-      });
-      return { done: true };
-    }
-
-    const result = await gradeHardAttempt(item, targetPhase, isCorrect);
-
-    if (isCorrect) {
-      tally.phasesCleared += 1;
-      await resultCard(container, {
-        isCorrect: true,
-        answer: expected,
-        pos,
-        translation: `${question} = ${expected}`,
-        example: item.example || item.explication,
-        actionLabel: 'Suivant',
-      });
-      return { done: false, newPhase: advancedPhase(targetPhase, item.item_type) };
-    }
-
-    // Plafonné : le plafond du jour bloque toute nouvelle tentative, mais la phase elle-même
-    // ne bouge pas — pas de pastille de transition, juste la réponse barrée.
-    await resultCard(container, {
-      isCorrect: false,
+      resultContext: context,
       answer: expected,
       pos,
       translation: `${question} = ${expected}`,
-      // La carte résultat peut porter le contexte même en phase 1 (question anglaise) :
-      // ici le français révélé est la réponse attendue, et le contexte explique pourquoi
-      // c'est précisément celle-là.
-      context,
       example: item.example || item.explication,
-      consequence: result.cappedToday
-        ? { wrongAnswer: answer.trim() || null }
-        : { wrongAnswer: answer.trim() || null, before: `Phase ${targetPhase}`, after: `Phase ${demotedPhase(targetPhase, item.item_type)}` },
-      actionLabel: 'Réessayer',
+      checkFn,
+      getConsequence: async (answer, isCorrect) => {
+        tally.answered += 1;
+        if (isCorrect) tally.correct += 1;
+        else tally.wrong += 1;
+
+        if (isCorrect && targetPhase === 3) {
+          await gradeHardAttempt(item, 3, true);
+          tally.exitedHard += 1;
+          tally.phasesCleared += 1;
+          outcome = { done: true };
+          return 'Sorti du mode compliqué : le mot revient demain en découverte';
+        }
+
+        const graded = await gradeHardAttempt(item, targetPhase, isCorrect);
+
+        if (isCorrect) {
+          tally.phasesCleared += 1;
+          outcome = { done: false, newPhase: advancedPhase(targetPhase, item.item_type) };
+          return null;
+        }
+
+        // Plafonné : le plafond du jour bloque toute nouvelle tentative, mais la phase
+        // elle-même ne bouge pas — pas de pastille de transition, juste la réponse barrée.
+        if (graded.cappedToday) {
+          outcome = { done: true };
+          return { wrongAnswer: answer.trim() || null };
+        }
+        const demoted = demotedPhase(targetPhase, item.item_type);
+        outcome = demoted !== targetPhase ? { done: false, newPhase: demoted } : { loop: true };
+        return { wrongAnswer: answer.trim() || null, before: `Phase ${targetPhase}`, after: `Phase ${demoted}` };
+      },
     });
-    if (result.cappedToday) return { done: true };
-    const demoted = demotedPhase(targetPhase, item.item_type);
-    if (demoted !== targetPhase) return { done: false, newPhase: demoted };
+    if (result.skipped) throw new ItemSkipped();
+    if (!outcome.loop) return outcome;
   }
 }
 
