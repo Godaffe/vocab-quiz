@@ -11,6 +11,28 @@ if ('storage' in navigator && 'persist' in navigator.storage) {
   navigator.storage.persist();
 }
 
+// Évite que le clavier ne recouvre la carte en cours, sans jamais bouger le reste de l'écran
+// (en-tête, barre de progression, boutons du pied) : #app est en 100svh, immunisé au clavier
+// (voir style.css), donc lui ne bouge déjà pas. Seul .session-body — la zone de la carte,
+// distincte de l'en-tête et du pied de session — est décalé vers le haut, et seulement du
+// strict nécessaire pour dégager le clavier, jamais recentré ni redimensionné.
+function initKeyboardAvoidance() {
+  const vv = window.visualViewport;
+  if (!vv) return;
+  const adjust = () => {
+    const body = document.querySelector('.session-body');
+    if (!body) return;
+    body.style.transform = '';
+    const rect = body.getBoundingClientRect();
+    const visibleBottom = vv.height + vv.offsetTop;
+    const covered = rect.bottom - visibleBottom;
+    body.style.transform = covered > 0 ? `translateY(-${Math.ceil(covered)}px)` : '';
+  };
+  vv.addEventListener('resize', adjust);
+  vv.addEventListener('scroll', adjust);
+}
+initKeyboardAvoidance();
+
 const app = document.getElementById('app');
 const screen = document.createElement('div');
 screen.id = 'screen';

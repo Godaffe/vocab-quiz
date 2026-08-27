@@ -108,7 +108,12 @@ body {
 #app {
   max-width: var(--screen-max);
   margin: 0 auto;
-  height: 100dvh;
+  /* 100svh (pas dvh) : la hauteur ne bouge pas à l'ouverture du clavier iOS, qui la ferait
+     sinon rétrécir et remonter l'en-tête et le pied de tout l'écran avec elle. Le clavier
+     s'incruste par-dessus ; seule la carte, si besoin, se décale pour rester visible au-dessus
+     (voir initKeyboardAvoidance dans main.js, qui décale .session-body via visualViewport). */
+  height: 100vh;
+  height: 100svh;
   overflow: hidden;
   padding: env(safe-area-inset-top) var(--gutter-screen) calc(env(safe-area-inset-bottom) + 82px);
   display: flex;
@@ -203,6 +208,10 @@ button { font-family: inherit; }
   transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
   user-select: text;
   -webkit-user-select: text;
+  /* Sans ce reset, iOS/Android habillent le champ de leur propre chrome natif (fond, liseré,
+     halo de focus) par-dessus notre cadre — d'où le double encadré au focus. */
+  appearance: none;
+  -webkit-appearance: none;
 }
 
 .ds-field::placeholder { color: var(--text-faint); font-family: var(--font-ui); font-weight: 400; }
@@ -609,7 +618,13 @@ input[type="text"]:focus, input[type="number"]:focus {
    glissement gérés en JS y réagissent. La souris/molette reste libre (touch-action ne
    s'applique qu'au tactile) : le défilement overflow-y reste donc utile sur desktop pour une
    carte trop longue. */
-.session-body { flex: 1; display: flex; flex-direction: column; justify-content: safe center; gap: 12px; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: none; }
+.session-body {
+  flex: 1; display: flex; flex-direction: column; justify-content: safe center; gap: 12px; min-height: 0;
+  overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: none;
+  /* Seule zone que le clavier est autorisé à décaler (voir initKeyboardAvoidance) : l'en-tête
+     et le pied de session, hors de .session-body, n'y sont jamais soumis. */
+  transition: transform 160ms var(--ease-out);
+}
 .session-foot { flex: none; padding: 16px 0 32px; display: flex; flex-direction: column; gap: 10px; }
 .session-note { text-align: center; font: 500 12.5px/1.4 var(--font-ui); color: var(--text-muted); }
 
