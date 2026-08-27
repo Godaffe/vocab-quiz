@@ -415,3 +415,64 @@ export function enterCard(card) {
   card.classList.add('ds-flip--in');
   requestAnimationFrame(() => requestAnimationFrame(() => card.classList.remove('ds-flip--in')));
 }
+
+// --- transition tuile <-> session (FLIP) --------------------------------------
+// La tuile touchée à l'accueil devient l'écran de session, et inversement à la sortie
+// (bouton ✕ ou bilan) : technique FLIP (First-Last-Invert-Play), un pur transform
+// (translate + scale), jamais de propriété de mise en page — rien à recalculer pendant
+// l'animation elle-même. `fromRect` = rectangle de départ voulu (la tuile), `toRect` =
+// rectangle réel actuel de l'élément (sa position/taille naturelle, plein écran).
+function flipTransform(fromRect, toRect) {
+  const dx = fromRect.left + fromRect.width / 2 - (toRect.left + toRect.width / 2);
+  const dy = fromRect.top + fromRect.height / 2 - (toRect.top + toRect.height / 2);
+  const sx = fromRect.width / toRect.width;
+  const sy = fromRect.height / toRect.height;
+  return `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`;
+}
+
+// Entrée : `el` est déjà à sa taille finale plein écran — on le pose d'abord (sans transition)
+// à la position/taille de `tileRect`, puis on relâche vers l'identité à la trame suivante.
+// Sans ce report d'une trame, le navigateur regroupe départ et arrivée en un seul état, et
+// rien ne s'anime.
+export function growFromRect(el, tileRect, { duration = 420 } = {}) {
+  return new Promise((resolve) => {
+    const finalRect = el.getBoundingClientRect();
+    el.style.transformOrigin = 'center center';
+    el.style.transition = 'none';
+    el.style.transform = flipTransform(tileRect, finalRect);
+    el.style.opacity = '0';
+    el.getBoundingClientRect(); // force le calcul de style avant de relâcher
+    requestAnimationFrame(() => {
+      el.style.transition = `transform ${duration}ms var(--ease-spring), opacity ${Math.round(duration * 0.6)}ms linear`;
+      el.style.transform = 'none';
+      el.style.opacity = '1';
+    });
+    setTimeout(() => {
+      el.style.transition = '';
+      el.style.transform = '';
+      el.style.opacity = '';
+      el.style.transformOrigin = '';
+      resolve();
+    }, duration + 20);
+  });
+}
+
+// Sortie : l'inverse — `el` part de sa taille pleine actuelle et rétrécit vers `tileRect`.
+// Les styles sont nettoyés avant de résoudre la promesse, pour que l'écran suivant (l'accueil,
+// rendu juste après) ne hérite pas d'un transform/opacity resté collé sur #screen.
+export function shrinkToRect(el, tileRect, { duration = 360 } = {}) {
+  return new Promise((resolve) => {
+    const startRect = el.getBoundingClientRect();
+    el.style.transformOrigin = 'center center';
+    el.style.transition = `transform ${duration}ms var(--ease-in-out), opacity ${duration}ms linear`;
+    el.style.transform = flipTransform(tileRect, startRect);
+    el.style.opacity = '0';
+    setTimeout(() => {
+      el.style.transition = '';
+      el.style.transform = '';
+      el.style.opacity = '';
+      el.style.transformOrigin = '';
+      resolve();
+    }, duration);
+  });
+}

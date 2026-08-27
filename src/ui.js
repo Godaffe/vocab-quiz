@@ -300,17 +300,23 @@ export async function renderHome(container, { onStartHard, onStartLearning, onSt
     playDailyGoalBurst(container.querySelector('#home-header'), container.querySelector('.ds-streak'));
   }
 
+  // La tuile touchée devient l'écran de session (voir growFromRect dans main.js) : son
+  // rectangle est capturé ici, au moment du tap, avant qu'elle ne disparaisse du DOM.
   if (session.hardItems.length > 0) {
-    container.querySelector('#start-hard-btn').addEventListener('click', () => onStartHard(session));
+    const tile = container.querySelector('#start-hard-btn');
+    tile.addEventListener('click', () => onStartHard(session, tile.getBoundingClientRect()));
   }
   if (newRemaining > 0) {
-    container.querySelector('#start-learning-btn').addEventListener('click', () => onStartLearning(session));
+    const tile = container.querySelector('#start-learning-btn');
+    tile.addEventListener('click', () => onStartLearning(session, tile.getBoundingClientRect()));
   }
   if (reviewRemaining > 0) {
-    container.querySelector('#start-review-btn').addEventListener('click', () => onStartReview(session));
+    const tile = container.querySelector('#start-review-btn');
+    tile.addEventListener('click', () => onStartReview(session, tile.getBoundingClientRect()));
   }
   if (failedWords.length > 0) {
-    container.querySelector('#start-failed-btn').addEventListener('click', () => onStartFailedWords(failedWords));
+    const tile = container.querySelector('#start-failed-btn');
+    tile.addEventListener('click', () => onStartFailedWords(failedWords, tile.getBoundingClientRect()));
   }
 }
 

@@ -2,6 +2,7 @@ import './style.css';
 import { initDb } from './db.js';
 import { rotateInternalBackup } from './backup.js';
 import { icon } from './icons.js';
+import { growFromRect, shrinkToRect } from './card.js';
 import {
   renderHome, renderHardMode, renderLearningMode, renderReviewMode,
   renderFailedWordsMode, renderSettings, renderProgress, renderSessionRecap,
@@ -73,30 +74,52 @@ function startSessionChrome() {
   setStatusBar(true);
 }
 
+// La tuile touchée à l'accueil devient l'écran de session (croissance depuis son rectangle),
+// et inversement à la sortie (rétrécissement vers ce même rectangle) — qu'on quitte par le ✕
+// ou par le bilan. Un seul rectangle mémorisé par session : les deux sorties possibles
+// (abandon en cours, ou bilan une fois la séance terminée) reviennent toutes deux vers la
+// tuile d'où l'on est parti, jamais recalculé entre-temps (la tuile n'existe déjà plus, sa
+// séance étant en cours).
+let lastEnterRect = null;
+
+function goHome(celebrate) {
+  const rect = lastEnterRect;
+  lastEnterRect = null;
+  if (rect) {
+    shrinkToRect(screen, rect).then(() => showHome({ celebrate }));
+  } else {
+    showHome({ celebrate });
+  }
+}
+
 // Une session ne retombe pas directement sur l'accueil : elle passe par le bilan, qui est
 // la seule sortie (ou le raccourci vers la révision du jour). `mightCompleteDay` : posé au
 // moment où la séance démarre, selon que l'autre file (celle que cette séance ne touche pas)
 // était déjà vide — seule une séance de découverte ou de révision peut boucler la journée.
 function finishSession(tally, mightCompleteDay) {
   renderSessionRecap(screen, tally, {
-    onHome: () => showHome({ celebrate: mightCompleteDay }),
+    onHome: () => goHome(mightCompleteDay),
+    // Raccourci interne (pas parti d'une tuile) : pas de tuile d'origine à faire grossir pour
+    // cette nouvelle séance, on n'anime donc pas son entrée.
     onReview: (session) => runMode(renderReviewMode, { reviewItems: session.reviewItems }),
   });
 }
 
-function runMode(renderMode, payload, mightCompleteDay = false) {
+function runMode(renderMode, payload, mightCompleteDay = false, enterRect = null) {
   startSessionChrome();
-  renderMode(screen, payload, { onComplete: (tally) => finishSession(tally, mightCompleteDay), onExit: showHome });
+  lastEnterRect = enterRect;
+  renderMode(screen, payload, { onComplete: (tally) => finishSession(tally, mightCompleteDay), onExit: () => goHome(false) });
+  if (enterRect) growFromRect(screen, enterRect);
 }
 
 function showHome({ celebrate = false } = {}) {
   setActiveNav('nav-home');
   renderHome(screen, {
     celebrate,
-    onStartHard: (session) => runMode(renderHardMode, { hardItems: session.hardItems }),
-    onStartLearning: (session) => runMode(renderLearningMode, { newItems: session.newItems }, session.reviewItems.length === 0),
-    onStartReview: (session) => runMode(renderReviewMode, { reviewItems: session.reviewItems }, session.newItems.length === 0),
-    onStartFailedWords: (failedWords) => runMode(renderFailedWordsMode, { failedWords }),
+    onStartHard: (session, rect) => runMode(renderHardMode, { hardItems: session.hardItems }, false, rect),
+    onStartLearning: (session, rect) => runMode(renderLearningMode, { newItems: session.newItems }, session.reviewItems.length === 0, rect),
+    onStartReview: (session, rect) => runMode(renderReviewMode, { reviewItems: session.reviewItems }, session.newItems.length === 0, rect),
+    onStartFailedWords: (failedWords, rect) => runMode(renderFailedWordsMode, { failedWords }, false, rect),
   });
 }
 
