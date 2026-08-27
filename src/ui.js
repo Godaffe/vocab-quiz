@@ -364,8 +364,13 @@ function newTally(kind) {
     learned: 0,
     levelUp: 0,
     requeued: 0,
+    enteredHard: 0,
     exitedHard: 0,
     phasesCleared: 0,
+    // Mots compliqués uniquement : nombre de mots distincts engagés dans la séance (posé une
+    // fois pour toutes par renderHardMode — tally.answered y compte des tentatives de phase,
+    // pas des mots), pour que le bilan puisse rapporter « sauvés sur total engagé ».
+    totalItems: 0,
     nextDates: [],
   };
 }
@@ -379,6 +384,10 @@ function recordOutcome(tally, before, after, firstCorrect) {
   if (after && before && after.is_learned && !before.is_learned) tally.learned += 1;
   if (after && before && after.box_level > before.box_level) tally.levelUp += 1;
   if (after && after.requeue_date && after.requeue_date !== before?.requeue_date) tally.requeued += 1;
+  // Bascule dans le mode compliqué à l'instant même de cette notation (3 échecs consécutifs) —
+  // distinct d'une simple reprogrammation, pour que le bilan de révision puisse isoler ce qui
+  // part en mode compliqué de ce qui redescend juste d'un niveau.
+  if (after && after.learning_process === 'hard' && (!before || before.learning_process !== 'hard')) tally.enteredHard += 1;
   if (after && after.next_review_date) tally.nextDates.push(after.next_review_date);
 }
 
@@ -435,12 +444,12 @@ function discoverCard(area, { word, pos, example, translation, context, registre
 // veut des textes distincts entre l'annotation sous la question et sa reprise dans le résultat.
 function morphCard(area, {
   instruction, question, hint, badge, context, resultContext = context, retry = false, retryLabel, remaining = 0, checkFn,
-  answer: expected, pos, translation, example, registre, sens, usage, getConsequence,
+  answer: expected, pos, translation, example, registre, sens, usage, sensHint, getConsequence,
 }) {
   return new Promise((resolve) => {
     const card = morphCardHtml({
       instruction, question, badge, retry, retryLabel, hint: hint || '', context: context || '', resultContext: resultContext || '',
-      answer: expected, pos, translation, example, registre, sens, usage,
+      answer: expected, pos, translation, example, registre, sens, usage, sensHint: sensHint || '',
     });
     area.innerHTML = `
       <div class="session-body">
@@ -575,7 +584,7 @@ function failureConsequence(item, answer, { preserveSchedule = false } = {}) {
 // (retournée ici) compte pour la note Leitner — les redemandes suivantes ne sont qu'un
 // entraînement affiché à l'écran, sous la forme d'une carte « deuxième tentative ».
 async function askUntilCorrect(container, item, {
-  instruction, question, expected, pos, example, context, registre, sens, usage, index, total, badge, forceRetry, options, checkFn,
+  instruction, question, expected, pos, example, context, registre, sens, usage, sensHint, index, total, badge, forceRetry, options, checkFn,
 }) {
   let first = null;
   let attempt = 0;
@@ -605,6 +614,7 @@ async function askUntilCorrect(container, item, {
       registre,
       sens,
       usage,
+      sensHint,
       example,
       getConsequence: (answer, isCorrect) => (!isCorrect && currentAttempt === 0 ? failureConsequence(item, answer, options) : null),
     });
@@ -630,6 +640,7 @@ async function runVocabQuestion(container, item, { index, total, badge, options,
     registre: item.registre,
     sens: item.sens,
     usage: item.usage,
+    sensHint: item.sens,
     index, total, badge, forceRetry, options,
     checkFn: (answer) => checkBase(item, answer),
   });
@@ -723,6 +734,7 @@ function hardModeQuestion(item, phase) {
       expected: forwardExpected,
       hint: hintMaskHtml(forwardExpected),
       context: item.context,
+      sensHint: item.sens,
       checkFn: forwardCheck,
     };
   }
@@ -732,12 +744,29 @@ function hardModeQuestion(item, phase) {
     expected: forwardExpected,
     hint: '',
     context: item.context,
+    sensHint: item.sens,
     checkFn: forwardCheck,
   };
 }
 
 function phaseBadge(phase) {
   return `<span class="ds-badge ds-badge--tricky">Phase ${phase}</span>`;
+}
+
+// Nombre de franchissements de phase qu'un item doit réussir pour sortir du mode compliqué :
+// 3 pour le vocabulaire (1->2->3->sortie), 2 pour la grammaire (1->3->sortie, la phase 2
+// n'existe pas pour elle) et pour les expressions (2->3->sortie, la phase 1 n'existe pas).
+function hardModeTotalSteps(itemType) {
+  return itemType === 'vocabulaire' ? 3 : 2;
+}
+
+// Position (0-indexée) d'une phase dans le trajet de l'item, jusqu'à hardModeTotalSteps
+// (= sorti). Sert à mesurer un plus-haut niveau atteint qui ne redescend jamais, même si
+// l'item lui-même redescend de phase après un échec.
+function hardModeStepIndex(itemType, phase) {
+  if (itemType === 'grammaire') return phase === 1 ? 0 : 1;
+  if (itemType === 'expressions') return phase === 2 ? 0 : 1;
+  return phase - 1;
 }
 
 // Interroge `item` à `targetPhase` jusqu'à ce qu'il quitte cette phase — en avançant
@@ -747,7 +776,7 @@ function phaseBadge(phase) {
 // le trajet 1→2→3 à un item avant de passer au suivant.
 async function runHardModeRound(container, item, targetPhase, tally) {
   while (true) {
-    const { instruction, question, expected, hint, context, checkFn } = hardModeQuestion(item, targetPhase);
+    const { instruction, question, expected, hint, context, sensHint, checkFn } = hardModeQuestion(item, targetPhase);
     const pos = item.item_type === 'vocabulaire' ? item.type : null;
     // Rempli par getConsequence (elle seule connaît le verdict et le résultat de la notation
     // Leitner) puis lu une fois morphCard résolue — `loop: true` signale qu'il faut reposer la
@@ -763,6 +792,7 @@ async function runHardModeRound(container, item, targetPhase, tally) {
       // reste montré dans le résultat même en phase 1, où le français révélé en est la réponse.
       context: targetPhase === 1 ? null : context,
       resultContext: context,
+      sensHint: targetPhase === 1 ? null : sensHint,
       answer: expected,
       pos,
       translation: `${question} = ${expected}`,
@@ -812,29 +842,51 @@ async function runHardModeRound(container, item, targetPhase, tally) {
 // toujours vidée en premier à chaque tour, si bien qu'un item redescendu en phase 1 (échec
 // en phase 2) y repasse avant les items restants en phase 2/3, comme n'importe quel autre.
 export async function renderHardMode(container, { hardItems }, { onComplete, onExit }) {
-  // Toujours la barre classique : le total compte les franchissements de phase (un mot en
-  // traverse 3), pas les mots eux-mêmes — des points n'y représenteraient rien de lisible.
-  const { area, setProgress } = renderModeShell(container, onExit, { total: hardItems.length * 3, useDots: false });
+  // Toujours la barre classique : le total compte les franchissements de phase nécessaires
+  // pour sortir chaque mot (3 ou 2 selon le type), pas les mots eux-mêmes — des points n'y
+  // représenteraient rien de lisible.
+  const total = hardItems.reduce((sum, item) => sum + hardModeTotalSteps(item.item_type), 0);
+  const { area, setProgress } = renderModeShell(container, onExit, { total, useDots: false });
   const tally = newTally('hard');
+  tally.totalItems = hardItems.length;
   const queues = { 1: [], 2: [], 3: [] };
   for (const item of hardItems) queues[item.hard_phase].push(item);
 
-  // Chaque item doit franchir 3 phases : la progression compte les franchissements
-  // réussis, pas les items, puisqu'un item peut redescendre de phase.
-  const total = hardItems.length * 3;
-  let done = 0;
+  // Plus-haut niveau atteint par item (ne redescend jamais, même si l'item lui-même
+  // redescend de phase après un échec) — c'est ce qui fait que la barre progresse toujours,
+  // sans jamais reculer, quel que soit le nombre d'aller-retours d'un mot entre les phases.
+  const key = (item) => `${item.item_type}:${item.item_key}`;
+  const highWater = new Map(hardItems.map((item) => [key(item), hardModeStepIndex(item.item_type, item.hard_phase)]));
+  // Un item quitte définitivement la session (sorti du mode compliqué, ou plafonné pour
+  // aujourd'hui, ou passé) : sa part du total est alors comptée en entier, qu'il ait ou non
+  // effectivement franchi toutes ses phases — il ne sera plus redemandé, la barre doit le
+  // refléter plutôt que rester bloquée en dessous de 100 % en fin de session.
+  const finished = new Set();
+
+  const computeDone = () => hardItems.reduce((sum, item) => {
+    const k = key(item);
+    return sum + (finished.has(k) ? hardModeTotalSteps(item.item_type) : highWater.get(k));
+  }, 0);
+
   while (queues[1].length || queues[2].length || queues[3].length) {
     const phase = queues[1].length ? 1 : queues[2].length ? 2 : 3;
-    setProgress(done, total, { badge: phaseBadge(phase) });
+    setProgress(computeDone(), total, { badge: phaseBadge(phase) });
     const item = queues[phase].shift();
+    const k = key(item);
     try {
       const outcome = await runHardModeRound(area, item, phase, tally);
-      done = Math.min(done + 1, total - 1);
-      if (!outcome.done) queues[outcome.newPhase].push(item);
+      if (outcome.done) {
+        finished.add(k);
+      } else {
+        const idx = hardModeStepIndex(item.item_type, outcome.newPhase);
+        highWater.set(k, Math.max(highWater.get(k), idx));
+        queues[outcome.newPhase].push(item);
+      }
     } catch (err) {
       if (!(err instanceof ItemSkipped)) throw err;
-      // Le mot passé ne revient dans aucune file : il reste exactement où il était.
-      done = Math.min(done + 1, total - 1);
+      // Le mot passé ne revient dans aucune file : il reste exactement où il était, mais ne
+      // sera plus redemandé cette session — compté comme terminé pour la barre.
+      finished.add(k);
     }
   }
   onComplete(tally);
@@ -897,64 +949,160 @@ export async function renderFailedWordsMode(container, { failedWords }, { onComp
 
 // --- Session terminée ------------------------------------------------------
 
-function formatDuration(ms) {
-  const seconds = Math.round(ms / 1000);
-  if (seconds < 60) return `${seconds} s`;
-  return `${Math.round(seconds / 60)} min`;
+// Teinte par catégorie de session : la même pour l'anneau, la coche et l'aplat de fond
+// plein écran (posé sur <body>, seul moyen d'aller sous la marge de #app jusqu'au bord réel
+// de l'écran — voir la classe body.recap-bg-* dans style.css).
+const RECAP_ACCENTS = {
+  new: { color: 'var(--cat-new)', soft: 'var(--copper-100)', shadow: 'rgba(176,74,15,.75)', text: 'var(--copper-600)', bodyClass: 'recap-bg-new' },
+  review: { color: 'var(--cat-review)', soft: 'var(--teal-100)', shadow: 'rgba(13,110,122,.75)', text: 'var(--teal-600)', bodyClass: 'recap-bg-review' },
+  failed: { color: 'var(--cat-failed)', soft: 'var(--crimson-100)', shadow: 'rgba(196,18,58,.7)', text: 'var(--crimson-600)', bodyClass: 'recap-bg-failed' },
+  tricky: { color: 'var(--cat-tricky)', soft: 'var(--violet-100)', shadow: 'rgba(109,40,217,.6)', text: 'var(--violet-600)', bodyClass: 'recap-bg-tricky' },
+};
+
+function pluralFr(n, word, pluralWord = `${word}s`) {
+  return n > 1 ? pluralWord : word;
 }
 
-function formatDateFr(iso) {
-  if (!iso) return '—';
-  const [y, m, d] = iso.split('-');
-  return `${d}/${m}/${y}`;
+// Contenu propre à chaque type de session : quelle proportion porte l'anneau, le titre, le
+// sous-texte statique, et — sauf pour la découverte, qui n'a rien à répartir — les segments
+// de la barre de répartition ci-dessous (valeur, couleur, libellé de légende).
+function buildRecapVisual(tally) {
+  if (tally.kind === 'learning') {
+    const dailyBudget = parseInt(getSetting('new_items_per_day') ?? '10', 10);
+    const introducedToday = countNewIntroducedToday(todayISO());
+    return {
+      accent: 'new',
+      eyebrow: 'Mots nouveaux',
+      num: introducedToday,
+      den: dailyBudget,
+      headline: `${introducedToday} mot${introducedToday > 1 ? 's' : ''} découvert${introducedToday > 1 ? 's' : ''}`,
+      sub: 'Ils entrent au niveau 1 et reviennent en révision demain.',
+      segments: null,
+    };
+  }
+  if (tally.kind === 'review') {
+    const requeuedOnly = tally.wrong - tally.enteredHard;
+    const segments = [
+      { value: tally.correct, color: 'var(--green-500)', label: 'réussis' },
+      ...(requeuedOnly > 0 ? [{ value: requeuedOnly, color: 'var(--crimson-500)', label: 'ratés' }] : []),
+      ...(tally.enteredHard > 0 ? [{ value: tally.enteredHard, color: 'var(--violet-500)', label: 'durs' }] : []),
+    ];
+    return {
+      accent: 'review',
+      eyebrow: 'Révision',
+      num: tally.correct,
+      den: tally.answered,
+      headline: `${tally.correct} mot${tally.correct > 1 ? 's' : ''} ${pluralFr(tally.correct, 'monte', 'montent')} d'un niveau`,
+      sub: '',
+      segments: segments.length > 1 ? segments : null,
+    };
+  }
+  if (tally.kind === 'failed') {
+    return {
+      accent: 'failed',
+      eyebrow: 'Mots ratés',
+      num: tally.correct,
+      den: tally.answered,
+      headline: `${tally.correct} mot${tally.correct > 1 ? 's' : ''} récupéré${tally.correct > 1 ? 's' : ''}`,
+      sub: 'Ils repassent en révision.',
+      segments: tally.wrong > 0 ? [
+        { value: tally.correct, color: 'var(--green-500)', label: 'récupérés' },
+        { value: tally.wrong, color: 'var(--crimson-500)', label: 'restent ratés' },
+      ] : null,
+    };
+  }
+  // hard
+  const stillHard = Math.max(0, tally.totalItems - tally.exitedHard);
+  return {
+    accent: 'tricky',
+    eyebrow: 'Mots compliqués',
+    num: tally.exitedHard,
+    den: tally.totalItems,
+    headline: `${tally.exitedHard} mot${tally.exitedHard > 1 ? 's' : ''} sauvé${tally.exitedHard > 1 ? 's' : ''}`,
+    sub: '',
+    segments: stillHard > 0 ? [
+      { value: tally.exitedHard, color: 'var(--green-500)', label: 'sauvés' },
+      { value: stillHard, color: 'var(--violet-500)', label: 'toujours durs' },
+    ] : null,
+  };
 }
 
-// Bilan « médaille » (apprentissage / révision) : le score porte l'écran, l'objectif
-// atteint est l'unique message — aucun détail de notation, disponible dans Statistiques.
-async function renderRecapMedal(container, tally, onHome) {
-  const streak = getStreak();
-  const today = todayISO();
-  const learnedCount = getLearnedCount();
-  const learnedToday = getLearnedToday(today);
-  // Le bilan de découverte porte l'objectif du jour (mots appris aujourd'hui sur l'objectif
-  // quotidien), pas le score d'une session — plusieurs sessions dans la même journée doivent
-  // faire progresser le même total, celui déjà montré sur l'anneau d'accueil. La révision
-  // garde le score de la session, qui n'a pas d'objectif journalier propre.
-  const isLearning = tally.kind === 'learning';
-  const dailyBudget = parseInt(getSetting('new_items_per_day') ?? '10', 10);
-  const medalNum = isLearning ? learnedToday : tally.correct;
-  const medalDen = isLearning ? dailyBudget : tally.answered;
-  const pct = medalDen > 0 ? Math.min(100, Math.round((medalNum / medalDen) * 100)) : 100;
+// Rang visuel fixe des pastilles flottantes (toujours la même hiérarchie de tailles, quel
+// que soit le poids réel du segment qu'elles annotent) : au plus 3 segments dans ce système.
+const RECAP_CALLOUT_RANKS = [
+  { size: 46, top: -33, font: 19 },
+  { size: 36, top: -28, font: 15 },
+  { size: 30, top: -24, font: 13 },
+];
+
+// Barre de répartition sous l'anneau : segments proportionnels, chacun annoté d'une pastille
+// flottante centrée sur le milieu de sa portion (pas sur sa frontière), puis une légende.
+function recapBarHtml(segments) {
+  const total = segments.reduce((sum, s) => sum + s.value, 0) || 1;
+  let cumulative = 0;
+  const callouts = segments.map((seg, i) => {
+    const mid = ((cumulative + seg.value / 2) / total) * 100;
+    cumulative += seg.value;
+    const rank = RECAP_CALLOUT_RANKS[i] ?? RECAP_CALLOUT_RANKS[RECAP_CALLOUT_RANKS.length - 1];
+    return `
+      <div class="recap-v__callout" style="left:${mid}%;width:${rank.size}px;height:${rank.size}px;top:${rank.top}px;background:${seg.color};font-size:${rank.font}px">${seg.value}</div>
+    `;
+  }).join('');
+  const bars = segments.map((seg) => `<div style="flex:${seg.value} 0 0;background:${seg.color}"></div>`).join('');
+  const legend = segments.map((seg) => `
+    <div class="recap-v__legenditem"><span class="recap-v__dot" style="background:${seg.color}"></span><span>${escapeHtml(seg.label)}</span></div>
+  `).join('');
+  return `
+    <div class="recap-v__barcard">
+      <div class="recap-v__bar">${bars}</div>
+      <div class="recap-v__callouts">${callouts}</div>
+      <div class="recap-v__legend" style="justify-content:${segments.length > 2 ? 'space-between' : 'space-around'}">${legend}</div>
+    </div>
+  `;
+}
+
+// Bilan unifié des quatre types de session : même geste partout (fond teinté, anneau,
+// coche, titre), seuls la couleur, les chiffres et la barre de répartition changent. Le
+// raccourci vers la révision du jour (présent avant seulement sur compliqués/ratés) reste
+// réservé à ces deux-là — après une séance de découverte ou de révision, le proposer serait
+// redondant avec ce qu'on vient de faire.
+export async function renderSessionRecap(container, tally, { onHome, onReview }) {
+  container.innerHTML = '<div class="loading-block"><span class="ds-spinner"></span><div class="loading-msg">Calcul du bilan</div></div>';
+  const session = (tally.kind === 'hard' || tally.kind === 'failed') ? await startSession() : null;
+  const reviewLeft = session ? session.reviewItems.length : 0;
+
+  const { accent, eyebrow, num, den, headline, sub, segments } = buildRecapVisual(tally);
+  const a = RECAP_ACCENTS[accent];
+  const pct = den > 0 ? Math.min(100, Math.round((num / den) * 100)) : 100;
+
+  document.body.classList.remove(...Object.values(RECAP_ACCENTS).map((x) => x.bodyClass));
+  document.body.classList.add(a.bodyClass);
 
   container.innerHTML = `
-    <div class="session-body" style="gap:22px">
-      <div class="recap-medal-wrap">
-        <div class="recap-medal" id="recap-ring">
-          <div class="recap-medal__inner">
-            <div class="recap-medal__n">${medalNum}</div>
-            <div class="recap-medal__d">/ ${medalDen} MOT${medalDen > 1 ? 'S' : ''}</div>
+    <div class="session-body recap-v">
+      <div class="recap-v__eyebrow" style="color:${a.text}">${escapeHtml(eyebrow)}</div>
+      <div class="recap-v__ringwrap">
+        <div class="recap-v__ring" id="recap-ring" style="--recap-color:${a.color};--recap-soft:${a.soft};--recap-shadow:${a.shadow}">
+          <div class="recap-v__disc">
+            <div class="recap-v__n">${num}</div>
+            <div class="recap-v__d">SUR ${den}</div>
           </div>
-          <span class="recap-medal__check">${icon('check', { size: 26, color: '#FAF7EF', stroke: 3 })}</span>
         </div>
+        <div class="recap-v__check" style="background:${a.color};box-shadow:0 6px 14px -4px ${a.shadow},inset 0 -1.5px 0 rgba(33,31,20,.2)">${icon('check', { size: 22, color: '#FDFBF5', stroke: 3.2 })}</div>
       </div>
-
-      <div class="recap-goal">
-        <div class="recap-goal__title">Objectif du jour atteint</div>
-        ${streak > 0 ? `<div class="recap-goal__streak">${icon('flame', { size: 16, color: 'var(--gold-400)', stroke: 2.3 })}<span>${streak} jour${streak > 1 ? 's' : ''} d'affilée</span></div>` : ''}
-      </div>
-
-      ${statPillHtml({
-        variant: 'recap', value: learnedCount, delta: learnedToday > 0 ? `+${learnedToday}` : null,
-        deltaColor: 'var(--green-400)', label: 'Mots appris au total',
-      })}
+      <div class="recap-v__headline">${escapeHtml(headline)}</div>
+      ${sub ? `<div class="recap-v__sub">${escapeHtml(sub)}</div>` : ''}
+      ${segments ? recapBarHtml(segments) : ''}
     </div>
     <div class="session-foot">
       <button type="button" class="ds-btn ds-btn--hero" id="recap-home">Retour à l'accueil</button>
+      ${reviewLeft > 0 ? `<button type="button" class="ds-btn ds-btn--hero ds-btn--secondary" id="recap-review">Réviser ${reviewLeft} mot${reviewLeft > 1 ? 's' : ''} dus</button>` : ''}
     </div>
   `;
+
   // Même mécanique qu'à l'accueil : l'anneau part de zéro puis se remplit à la vraie
-  // proportion de bonnes réponses, jamais un 100 % de façade. requestAnimationFrame ne se
-  // déclenche pas sur une page masquée — le minuteur reprend la main.
+  // proportion — requestAnimationFrame ne se déclenche pas sur une page masquée, le minuteur
+  // reprend la main pour que la valeur finisse toujours par être la bonne.
   let ringPainted = false;
   const paintRing = () => {
     if (ringPainted) return;
@@ -963,77 +1111,10 @@ async function renderRecapMedal(container, tally, onHome) {
   };
   requestAnimationFrame(paintRing);
   setTimeout(paintRing, 250);
-  container.querySelector('#recap-home').addEventListener('click', onHome);
-}
-
-// Bilan détaillé (mots compliqués / mots ratés) : ce qui a bougé, chiffré — pas de médaille,
-// « objectif du jour » ne concerne que découverte/révision.
-async function renderRecapDetailed(container, tally, { onHome, onReview }) {
-  const session = await startSession();
-  const streak = getStreak();
-  const nextDate = tally.nextDates.length ? tally.nextDates.slice().sort()[0] : null;
-  const reviewLeft = session.reviewItems.length;
-
-  const rows = tally.kind === 'hard'
-    ? [
-      ['Phases franchies', tally.phasesCleared],
-      ['Sortis du mode compliqué', tally.exitedHard],
-    ]
-    : [
-      ["Montés d'un niveau", tally.levelUp],
-      ['Reprogrammés en découverte', tally.requeued],
-      ['Prochaine révision', formatDateFr(nextDate)],
-    ];
-
-  const thirdColumn = tally.kind === 'hard'
-    ? ['Sortis', tally.exitedHard]
-    : ['Appris', tally.learned];
-
-  container.innerHTML = `
-    <div class="session-body" style="gap:16px">
-      <div class="recap-title">Session terminée</div>
-      <div class="recap-sub">Tu as répondu à ${tally.answered} ${tally.answered > 1 ? 'questions' : 'question'} en ${formatDuration(Date.now() - tally.started)}.</div>
-
-      <div class="recap-card">
-        <div class="recap-nums">
-          <div>
-            <div class="recap-num recap-num--ok">${tally.correct}</div>
-            <div class="recap-numlabel">Corrects</div>
-          </div>
-          <div>
-            <div class="recap-num recap-num--ko">${tally.wrong}</div>
-            <div class="recap-numlabel">Ratés</div>
-          </div>
-          <div>
-            <div class="recap-num">${thirdColumn[1]}</div>
-            <div class="recap-numlabel">${thirdColumn[0]}</div>
-          </div>
-        </div>
-        ${rows.map(([label, value]) => `
-          <div class="recap-row"><span>${label}</span><b>${escapeHtml(value)}</b></div>
-        `).join('')}
-      </div>
-
-      ${streak > 0 ? `<div class="recap-streak">${icon('flame', { size: 17, color: '#2B1F00', stroke: 2.4 })}<span>Série portée à ${streak} jour${streak > 1 ? 's' : ''}</span></div>` : ''}
-    </div>
-    <div class="session-foot">
-      <button type="button" class="ds-btn ds-btn--hero" id="recap-home">Retour à l'accueil</button>
-      ${reviewLeft > 0 ? `<button type="button" class="ds-btn ds-btn--hero ds-btn--secondary" id="recap-review">Réviser ${reviewLeft} mot${reviewLeft > 1 ? 's' : ''} dus</button>` : ''}
-    </div>
-  `;
 
   container.querySelector('#recap-home').addEventListener('click', onHome);
   if (reviewLeft > 0) {
     container.querySelector('#recap-review').addEventListener('click', () => onReview(session));
-  }
-}
-
-export async function renderSessionRecap(container, tally, { onHome, onReview }) {
-  container.innerHTML = '<div class="loading-block"><span class="ds-spinner"></span><div class="loading-msg">Calcul du bilan</div></div>';
-  if (tally.kind === 'learning' || tally.kind === 'review') {
-    await renderRecapMedal(container, tally, onHome);
-  } else {
-    await renderRecapDetailed(container, tally, { onHome, onReview });
   }
 }
 

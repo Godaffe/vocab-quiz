@@ -145,7 +145,7 @@ export async function gradeAnswer(itemType, itemKey, isCorrect, todayISO, { pres
       consecutiveFailures,
       requeueDate,
       enteringHard ? 'hard' : 'normal',
-      enteringHard ? 1 : row.hard_phase,
+      enteringHard ? initialHardPhase(itemType) : row.hard_phase,
       enteringHard ? 0 : row.hard_failures_today,
       enteringHard ? todayISO : row.hard_session_date,
       itemType,
@@ -210,9 +210,18 @@ export function advancedPhase(currentPhase, itemType) {
   return 3; // phase 2 -> 3 (a phase-3 success exits the process via exitHardMode, not this fn)
 }
 
+// Les expressions n'ont pas de phase 1 (pas de sens En -> Fr pertinent à tester isolément) :
+// leur trajet est 2 -> 3 -> sortie, et un échec en phase 2 ou 3 ne redescend jamais sous 2.
 export function demotedPhase(currentPhase, itemType) {
+  if (itemType === 'expressions') return 2;
   if (currentPhase === 3) return itemType === 'grammaire' ? 1 : 2;
   return 1; // phase 1 or phase 2 failed -> (re)descend to phase 1
+}
+
+// Phase de départ d'un item qui entre en mode compliqué : 2 pour les expressions (qui
+// sautent la phase 1), 1 pour tout le reste.
+function initialHardPhase(itemType) {
+  return itemType === 'expressions' ? 2 : 1;
 }
 
 // All three branches must expose the same column list (SQLite UNION ALL requires matching
@@ -273,12 +282,13 @@ export async function getHardModeItems(todayISO) {
   let changed = false;
   for (const item of items) {
     if (item.hard_session_date !== todayISO) {
+      const startPhase = initialHardPhase(item.item_type);
       run(
-        `UPDATE progress SET hard_phase = 1, hard_failures_today = 0, hard_session_date = ?
+        `UPDATE progress SET hard_phase = ?, hard_failures_today = 0, hard_session_date = ?
          WHERE item_type = ? AND item_key = ?`,
-        [todayISO, item.item_type, item.item_key]
+        [startPhase, todayISO, item.item_type, item.item_key]
       );
-      item.hard_phase = 1;
+      item.hard_phase = startPhase;
       item.hard_failures_today = 0;
       item.hard_session_date = todayISO;
       changed = true;

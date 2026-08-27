@@ -66,26 +66,69 @@ export function cardStackHtml(remaining, innerHtml, { stretch = false } = {}) {
 // --- carte découverte --------------------------------------------------------
 // Recto : le mot à apprendre, son type et son exemple. Verso : la traduction, et le
 // contexte s'il désambiguë cette traduction précise (jamais sur le recto : il annote le
-// mot français, pas le mot anglais qu'on introduit).
+// mot français, pas le mot anglais qu'on introduit). Le mot est ancré au même niveau sur les
+// deux faces (espaceur fixe en tête) ; les champs complémentaires (exemple au recto, sens/usage
+// au verso) sont épinglés en bas via un espaceur élastique — jamais centrés au milieu, qui
+// ferait flotter le mot à une hauteur différente selon ce que la carte a d'autre à montrer.
 export function flipCardHtml({ word, pos, example, translation, context, registre, sens, usage, foot }) {
   return `
     <div class="ds-flip" id="flip-card">
       <div class="ds-flip__inner">
         <div class="ds-flip__face ds-flip__face--front">
-          <span class="ds-prompt">Nouveau mot</span>
-          <div class="ds-word ds-word--lg">${escapeHtml(word)}</div>
-          ${pos ? `<span class="ds-pos">${escapeHtml(pos)}</span>` : ''}
-          ${example ? `<div class="ds-example">${escapeHtml(example)}</div>` : ''}
+          <div class="ds-flip__spacer"></div>
+          <div class="ds-flip__head">
+            <span class="ds-prompt">Nouveau mot</span>
+            <div class="${wordSizeClass(word)}">${escapeHtml(word)}</div>
+            ${pos ? `<span class="ds-flip__pos">${escapeHtml(pos)}</span>` : ''}
+          </div>
+          ${example ? `
+          <div class="ds-example--tab">
+            <span class="ds-example__tab">Exemple</span>
+            <div class="ds-example__text">${escapeHtml(example)}</div>
+          </div>` : ''}
+          <div class="ds-flip__fill"></div>
           <div class="ds-flip__foot">${escapeHtml(foot)}</div>
         </div>
         <div class="ds-flip__face ds-flip__face--back">
-          <span class="ds-prompt">Traduction</span>
-          <div class="ds-word ds-word--lg">${escapeHtml(translation)}</div>
-          ${context ? `<div class="ds-context">(${escapeHtml(context)})</div>` : ''}
-          ${wordInfoHtml({ registre, sens, usage })}
+          <div class="ds-flip__spacer"></div>
+          <div class="ds-flip__head">
+            <span class="ds-prompt">Traduction</span>
+            <div class="${wordSizeClass(translation)}">${escapeHtml(translation)}</div>
+            ${context ? `<div class="ds-context">(${escapeHtml(context)})</div>` : ''}
+            ${registre ? `<span class="ds-flip__registre"><span class="ds-flip__registre-label">Registre&nbsp;·&nbsp;</span>${escapeHtml(registre)}</span>` : ''}
+          </div>
+          <div class="ds-flip__fill"></div>
+          ${(sens || usage) ? `
+          <div class="ds-flip__fields">
+            ${sens ? fieldCardHtml('Sens', sens, 'sens') : ''}
+            ${usage ? fieldCardHtml('Usage', usage, 'usage') : ''}
+          </div>` : ''}
           <div class="ds-flip__foot">${escapeHtml(foot)}</div>
         </div>
       </div>
+    </div>
+  `;
+}
+
+// Taille du mot dégressive selon sa longueur : un mot ou une expression trop longue à 42px
+// déborderait ou casserait la mise en page — 3 paliers plutôt qu'un seul rétrécissement
+// continu, pour rester net à chaque taille plutôt que flou entre deux valeurs arbitraires.
+function wordSizeClass(text) {
+  const len = String(text ?? '').length;
+  if (len > 22) return 'ds-word ds-word--sm';
+  if (len > 14) return 'ds-word ds-word--md';
+  return 'ds-word ds-word--lg';
+}
+
+// Carte Sens / Usage du verso : une pastille carrée porte le libellé, le texte suit à droite —
+// deux teintes cuivre qui montent en intensité (sens, puis usage). Bascule sur une variante
+// resserrée quand le texte est trop long pour respirer à 13px, pareil que le mot lui-même.
+function fieldCardHtml(label, text, variant) {
+  const compact = String(text ?? '').length > 90;
+  return `
+    <div class="ds-flip__field ds-flip__field--${variant}">
+      <div class="ds-flip__fieldicon ds-flip__fieldicon--${variant}"><span class="ds-flip__fieldlabel ds-flip__fieldlabel--${variant}">${escapeHtml(label)}</span></div>
+      <div class="ds-flip__fieldtext${compact ? ' ds-flip__fieldtext--sm' : ''}">${escapeHtml(text)}</div>
     </div>
   `;
 }
@@ -116,7 +159,7 @@ export function answerFieldHtml({ placeholder = 'Ta réponse' } = {}) {
 // « question ») ; runMorphCard (ci-dessous) pilote les classes d'état à la soumission.
 export function morphCardHtml({
   instruction, question, badge = '', hint = '', context = '', resultContext = context, retry = false, retryLabel = 'Deuxième tentative',
-  answer = '', pos = '', translation = '', example = '', registre, sens, usage,
+  answer = '', pos = '', translation = '', example = '', registre, sens, usage, sensHint = '',
 }) {
   return `
     <div class="ds-morph${retry ? ' ds-morph--retry' : ''}" id="morph-card">
@@ -133,6 +176,7 @@ export function morphCardHtml({
             </div>
             ${hint ? `<div class="ds-qcard__hint">${hint}</div>` : ''}
             ${context ? `<div class="ds-context" id="m-qcontext">(${escapeHtml(context)})</div>` : ''}
+            ${sensHint ? `<div class="ds-wordinfo__row ds-morph__senshint"><span class="ds-wordinfo__label">Sens</span><span class="ds-wordinfo__text">${escapeHtml(sensHint)}</span></div>` : ''}
             <div class="ds-morph__field" id="m-field">
               ${answerFieldHtml()}
               <span class="ds-morph__typedwrap">
@@ -215,12 +259,10 @@ export function consequenceHtml({ wrongAnswer, before, after }) {
 // plan) : même mécanique visuelle pour la ligne de stats de l'accueil (icône + libellé sous
 // le nombre) et le total du bilan (libellé à droite, sans icône).
 export function statPillHtml({ variant = 'home', side = 'left', value, delta, deltaColor, label, glyph = '' }) {
-  const peekClass = variant === 'recap' ? 'stat-pill--full' : side === 'right' ? 'stat-pill--right' : 'stat-pill--left';
+  const peekClass = side === 'right' ? 'stat-pill--right' : 'stat-pill--left';
   const deltaHtml = delta != null ? `<span class="stat-pill__delta" style="color:${deltaColor}">${escapeHtml(delta)}</span>` : '';
   const nums = `<div class="stat-pill__nums"><span class="stat-pill__n">${escapeHtml(value)}</span>${deltaHtml}</div>`;
-  const body = variant === 'recap'
-    ? `${nums}<span class="stat-pill__label">${escapeHtml(label)}</span>`
-    : `<div class="stat-pill__row">${nums}<span class="stat-pill__glyph">${glyph}</span></div><span class="stat-pill__label">${escapeHtml(label)}</span>`;
+  const body = `<div class="stat-pill__row">${nums}<span class="stat-pill__glyph">${glyph}</span></div><span class="stat-pill__label">${escapeHtml(label)}</span>`;
   return `
     <div class="stat-pill stat-pill--${variant} ${peekClass}">
       <div class="stat-pill__peek stat-pill__peek--1"></div>

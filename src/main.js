@@ -41,7 +41,7 @@ function setStatusBar(inSession) {
 // Toute sortie de session passe par l'une des routes ci-dessous : c'est donc ici qu'on
 // lève la classe posée par la coque de session, qui masque la nav du bas.
 function setActiveNav(id) {
-  document.body.classList.remove('in-session');
+  document.body.classList.remove('in-session', 'recap-bg-new', 'recap-bg-review', 'recap-bg-failed', 'recap-bg-tricky');
   setStatusBar(false);
   nav.querySelectorAll('button').forEach((b) => b.classList.toggle('ds-tab--active', b.id === id));
 }

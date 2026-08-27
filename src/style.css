@@ -385,10 +385,8 @@ input[type="text"]:focus, input[type="number"]:focus {
 
 /* Pastille de stat : pile à trois couches (deux liserés décalés en dessous, le corps
    ink-500 au premier plan). Le décalage part vers l'intérieur de la paire pour lire comme
-   un jeu de cartes commun aux deux pastilles ; --full centre le liséré pour une pastille
-   seule (bilan de session). */
+   un jeu de cartes commun aux deux pastilles. */
 .stat-pill { position: relative; flex: 1; padding-top: 8px; }
-.stat-pill--recap { flex: none; width: 100%; }
 
 .stat-pill__peek { position: absolute; top: 0; height: 20px; border-radius: 12px; background: var(--ink-300); }
 .stat-pill__peek--2 { top: 4px; background: var(--ink-400); }
@@ -396,8 +394,6 @@ input[type="text"]:focus, input[type="number"]:focus {
 .stat-pill--left .stat-pill__peek--2 { left: 4px; }
 .stat-pill--right .stat-pill__peek { left: 0; right: 8px; }
 .stat-pill--right .stat-pill__peek--2 { right: 4px; }
-.stat-pill--full .stat-pill__peek { left: 8px; right: 0; }
-.stat-pill--full .stat-pill__peek--2 { left: 4px; right: 2px; }
 
 .stat-pill__body {
   position: relative;
@@ -414,11 +410,6 @@ input[type="text"]:focus, input[type="number"]:focus {
 .stat-pill__glyph { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: rgba(250, 247, 239, .2); }
 
 .stat-pill--home .stat-pill__row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-
-.stat-pill--recap .stat-pill__body { display: flex; align-items: center; justify-content: space-between; padding: 13px 15px; }
-.stat-pill--recap .stat-pill__n { font-size: 26px; color: var(--stone-50); }
-.stat-pill--recap .stat-pill__delta { font: 600 12px/1 var(--font-ui); }
-.stat-pill--recap .stat-pill__label { margin-top: 0; font-size: 11.5px; }
 
 /* Colonne cuivre à gauche sur 3 rangs, puis révision / compliqués / ratés à droite. */
 .home-grid {
@@ -640,7 +631,7 @@ input[type="text"]:focus, input[type="number"]:focus {
 /* ---------- carte découverte (retournement) ---------- */
 
 .ds-flip {
-  position: relative; display: flex; flex-direction: column; height: 340px;
+  position: relative; display: flex; flex-direction: column; flex: 1; min-height: 340px;
   perspective: 1400px; touch-action: none; cursor: pointer;
   transition: transform 160ms var(--ease-out), opacity 160ms linear;
   will-change: transform;
@@ -654,19 +645,27 @@ input[type="text"]:focus, input[type="number"]:focus {
   background: var(--paper-high);
   border-radius: var(--radius-card);
   box-shadow: var(--keyline), var(--shadow-raised);
-  padding: var(--card-pad-lg);
+  padding: 28px 22px 44px;
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
   transition: opacity var(--dur-fast) var(--ease-out) var(--dur-fast);
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 12px;
   text-align: center;
   user-select: none;
   -webkit-user-select: none;
 }
+
+/* Le mot est ancré au même niveau sur les deux faces : un espaceur de taille fixe en tête,
+   pas un centrage du bloc entier, qui le ferait flotter plus haut ou plus bas selon ce que la
+   carte a d'autre à montrer. */
+.ds-flip__spacer { flex: 0 1 76px; }
+/* Espaceur élastique : au recto il vient après l'exemple pour pousser le pied vers le bas ;
+   au verso il vient avant les champs Sens/Usage pour les épingler juste au-dessus du pied. */
+.ds-flip__fill { flex: 1 1 auto; }
+
+.ds-flip__head { display: flex; flex-direction: column; align-items: center; gap: 13px; }
 
 .ds-flip__face--front { opacity: 1; }
 .ds-flip--back .ds-flip__face--front { opacity: 0; }
@@ -706,29 +705,112 @@ input[type="text"]:focus, input[type="number"]:focus {
 
 .ds-flip__foot {
   position: absolute;
-  left: 0; right: 0; bottom: 18px;
+  left: 0; right: 0; bottom: 20px;
   font: 500 12.5px/1.4 var(--font-ui);
   color: var(--text-muted);
 }
 
-.ds-example {
-  margin-top: 4px;
-  padding: 14px;
+/* Exemple du recto : languette qui mord le bord supérieur du cadre, comme une fiche
+   cartonnée — jamais un simple encadré, pour le distinguer clairement du mot lui-même. */
+.ds-example--tab {
+  position: relative;
   width: 100%;
-  background: var(--surface-sunken);
-  border-radius: var(--radius-md);
-  box-shadow: inset 0 2px 5px rgba(33, 31, 20, .16), inset 0 0 0 1px var(--ink-300);
-  font: italic 400 13.5px/1.5 var(--font-ui);
-  color: var(--text-body);
+  box-sizing: border-box;
+  margin-top: 20px;
+  padding: 20px 16px 14px;
+  background: var(--stone-100);
+  border: 1px solid var(--stone-600);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 0 3px 3px rgba(92, 84, 67, .2);
 }
+.ds-example__tab {
+  position: absolute;
+  top: -10px; left: 50%;
+  transform: translateX(-50%);
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  background: var(--paper-high);
+  box-shadow: 0 0 0 1px var(--stone-600);
+  font: 600 10px/1 var(--font-mono);
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--stone-600);
+}
+.ds-example__text { font: italic 400 13px/1.5 var(--font-ui); color: var(--text-body); }
 
 /* ---------- carte question (indice de reprise, réutilisé par la carte à fusion) ---------- */
 
 .ds-qcard__hint { margin-top: 16px; }
 
 .ds-prompt { font: 600 12px/1.25 var(--font-ui); text-transform: uppercase; letter-spacing: .09em; color: var(--text-faint); }
-.ds-word { font: 700 38px/1.18 var(--font-display); letter-spacing: -.03em; color: var(--text-strong); text-wrap: balance; }
-.ds-word--lg { font-size: 46px; }
+.ds-word { font: 700 38px/1.18 var(--font-display); letter-spacing: -.03em; color: var(--text-strong); text-wrap: balance; overflow-wrap: anywhere; }
+/* 3 paliers dégressifs (carte découverte) : un mot ou une expression trop longue à la taille
+   normale déborderait ou casserait la mise en page — voir wordSizeClass() dans card.js. */
+.ds-word--lg { font-size: 42px; line-height: 1.03; letter-spacing: -.035em; }
+.ds-word--md { font-size: 32px; line-height: 1.08; letter-spacing: -.03em; }
+.ds-word--sm { font-size: 28px; line-height: 1.08; letter-spacing: -.03em; }
+
+/* Type grammatical du recto : pastille pleine, plus affirmative que le liseré discret de
+   .ds-pos (réutilisé ailleurs) — la carte découverte est le seul endroit où ce badge est la
+   seule information secondaire visible, il peut se permettre d'être plus présent. */
+.ds-flip__pos {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  background: var(--copper-400);
+  color: #FDFBF5;
+  font: 600 11.5px/1 var(--font-ui);
+  white-space: nowrap;
+}
+
+/* Registre du verso : même rôle que .ds-wordinfo__register ailleurs, mais en pastille autonome
+   sous le mot plutôt qu'empilée avec sens/usage, avec son libellé intégré. */
+.ds-flip__registre {
+  display: inline-flex;
+  align-items: baseline;
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  background: var(--copper-50);
+  box-shadow: inset 0 0 0 1px var(--copper-300);
+  font: 600 11.5px/1 var(--font-ui);
+  color: var(--copper-600);
+  white-space: nowrap;
+}
+.ds-flip__registre-label { opacity: .7; }
+
+/* Sens / Usage du verso : une pastille carrée porte le libellé, le texte suit à droite — deux
+   teintes cuivre qui montent en intensité, jamais empilées en simples lignes étiquetées comme
+   .ds-wordinfo (réservé à la reprise dans le résultat et à l'indice sous la question). */
+.ds-flip__fields { display: flex; flex-direction: column; gap: 10px; width: 100%; margin-top: 20px; }
+.ds-flip__field {
+  box-sizing: border-box;
+  width: 100%;
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  text-align: left;
+  padding: 12px 14px;
+  border-radius: var(--radius-lg);
+}
+.ds-flip__field--sens { background: var(--copper-100); box-shadow: inset 0 0 0 1px var(--copper-300); }
+.ds-flip__field--usage { background: var(--copper-50); box-shadow: inset 0 0 0 1px var(--copper-400); }
+.ds-flip__fieldicon {
+  flex: none;
+  width: 52px;
+  border-radius: var(--radius-md);
+  background: var(--paper-high);
+  display: grid;
+  place-items: center;
+  padding: 6px 0;
+}
+.ds-flip__fieldicon--sens { box-shadow: inset 0 0 0 1px var(--copper-300); }
+.ds-flip__fieldicon--usage { box-shadow: inset 0 0 0 1px var(--copper-400); }
+.ds-flip__fieldlabel { font: 600 10px/1 var(--font-mono); letter-spacing: .1em; text-transform: uppercase; }
+.ds-flip__fieldlabel--sens { color: var(--copper-600); }
+.ds-flip__fieldlabel--usage { color: var(--copper-700); }
+.ds-flip__fieldtext { flex: 1; padding: 6px 2px 6px 0; font: 400 13px/1.5 var(--font-ui); color: var(--text-body); }
+.ds-flip__fieldtext--sm { padding: 4px 2px; font-size: 11.5px; line-height: 1.4; }
 
 /* Contexte désambiguateur (ex. « cuire (au four) ») : jamais dans la réponse attendue, juste
    une précision affichée sous le mot posé en question. */
@@ -747,6 +829,13 @@ input[type="text"]:focus, input[type="number"]:focus {
 .ds-result__translation .ds-wordinfo { background: rgba(255, 255, 255, .14); box-shadow: none; }
 .ds-result__translation .ds-wordinfo__register { background: rgba(255, 255, 255, .22); color: #fff; }
 .ds-result__translation .ds-wordinfo__label { color: rgba(255, 255, 255, .72); }
+
+/* Sens affiché sous la question elle-même, quand elle est posée en français : désambiguë le
+   sens demandé avant même de répondre (même info que dans ds-wordinfo, hors encadré, alignée
+   comme ds-context puisqu'elle joue le même rôle d'annotation sous le mot posé). */
+.ds-morph__senshint { margin-top: 4px; text-align: center; align-items: center; gap: 4px; }
+.ds-morph__senshint .ds-wordinfo__label::after { content: ' : '; }
+.ds-morph__senshint .ds-wordinfo__label, .ds-morph__senshint .ds-wordinfo__text { display: inline; }
 .ds-result__translation .ds-wordinfo__text { color: rgba(255, 255, 255, .92); }
 
 /* Indice masqué : les lettres révélées s'affichent, les autres restent des créneaux de
@@ -945,104 +1034,93 @@ input[type="text"]:focus, input[type="number"]:focus {
 }
 .consequence__level--after { color: #fff; background: var(--crimson-500); box-shadow: none; }
 
-/* ---------- bilan de session ---------- */
+/* ---------- bilan de session — un seul geste, quatre teintes ---------- */
+/* Fond plein écran posé sur <body> (seul moyen de déborder la marge de #app jusqu'au bord
+   réel de l'écran, comme le fait déjà body.in-session pour la barre d'état) : la couleur
+   dominante identifie le type de séance, jamais l'objectif atteint. */
+body.recap-bg-new { background: var(--cat-new-soft); }
+body.recap-bg-review { background: var(--cat-review-soft); }
+body.recap-bg-failed { background: var(--cat-failed-soft); }
+body.recap-bg-tricky { background: var(--cat-tricky-soft); }
 
-.recap-title { font: 700 34px/1.1 var(--font-display); letter-spacing: -.03em; color: var(--text-strong); }
-.recap-sub { font: 500 14px/1.5 var(--font-ui); color: var(--text-body); }
+.recap-v { align-items: center; text-align: center; gap: 14px; padding-top: 8px; }
 
-.recap-card {
-  background: var(--paper-high);
-  border-radius: var(--radius-card);
-  box-shadow: 0 0 0 1px var(--ink-200), 0 12px 26px -18px rgba(33, 31, 20, .5);
-  overflow: hidden;
-}
+.recap-v__eyebrow { font: 600 10px/1 var(--font-mono); letter-spacing: .18em; text-transform: uppercase; }
 
-.recap-nums { display: flex; justify-content: space-between; padding: 18px; border-bottom: 1.5px solid var(--ink-200); }
-.recap-num { font: 700 32px/1 var(--font-display); color: var(--text-strong); }
-.recap-num--ok { color: var(--green-600); }
-.recap-num--ko { color: var(--crimson-500); }
-.recap-numlabel { font: 500 12px/1 var(--font-ui); color: var(--text-muted); margin-top: 7px; }
+.recap-v__ringwrap { position: relative; margin-top: 6px; }
 
-.recap-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 15px 18px; font: 500 13.5px/1.4 var(--font-ui); color: var(--text-body); border-bottom: 1px solid var(--ink-200); }
-.recap-row:last-child { border-bottom: 0; }
-.recap-row b { font: 500 13px/1 var(--font-mono); color: var(--text-strong); }
-
-.recap-streak {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 14px 16px;
-  background: var(--gold-100);
-  border-radius: var(--radius-md);
-  box-shadow: inset 0 0 0 1px rgba(33, 31, 20, .12);
-  font: 600 13.5px/1.4 var(--font-ui);
-  color: #2B1F00;
-}
-
-/* ---------- bilan — médaille (apprentissage / révision) ---------- */
-/* Le score porte l'écran : l'anneau ne se remplit que de la part réellement juste sur ce qui
-   a été noté (correct / répondu) — un mot passé ne compte nulle part, mais un mot raté puis
-   corrigé au deuxième essai ne compte pas comme juste ici, seule la première tentative compte.
-   Coche qui referme le cercle. Aucun autre détail de notation ici — juste l'objectif atteint. */
-
-.recap-medal-wrap { display: grid; place-items: center; }
-
-.recap-medal {
-  position: relative;
-  width: 190px;
-  height: 190px;
+.recap-v__ring {
+  width: 204px;
+  height: 204px;
   border-radius: var(--radius-pill);
-  background: conic-gradient(var(--green-500) calc(var(--pct, 100) * 3.6deg), var(--ink-200) 0);
+  background: conic-gradient(var(--recap-color, var(--green-500)) calc(var(--pct, 100) * 3.6deg), var(--recap-soft, var(--ink-200)) 0);
   display: grid;
   place-items: center;
-  box-shadow: 0 14px 30px -14px rgba(15, 122, 74, .55);
+  box-shadow: 0 16px 34px -18px var(--recap-shadow, rgba(15, 122, 74, .55));
   transition: --pct var(--dur-slow) var(--ease-out);
 }
 
-.recap-medal__inner {
-  width: 158px;
-  height: 158px;
+.recap-v__disc {
+  width: 166px;
+  height: 166px;
   border-radius: var(--radius-pill);
   background: var(--paper-high);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  box-shadow: inset 0 0 0 1.5px var(--ink-200);
+  gap: 3px;
+  box-shadow: inset 0 0 0 1.5px var(--recap-soft, var(--ink-200));
 }
 
-.recap-medal__n { font: 700 62px/1 var(--font-display); letter-spacing: -.05em; color: var(--text-strong); }
-.recap-medal__d { font: 600 12px/1 var(--font-mono); letter-spacing: .12em; color: var(--text-muted); }
+.recap-v__n { font: 700 62px/1 var(--font-display); letter-spacing: -.05em; color: var(--text-strong); }
+.recap-v__d { font: 600 11px/1 var(--font-mono); letter-spacing: .14em; color: var(--text-muted); }
 
-.recap-medal__check {
+.recap-v__check {
   position: absolute;
-  bottom: -6px;
+  bottom: -8px;
   left: 50%;
   transform: translateX(-50%);
   display: grid;
   place-items: center;
-  width: 48px;
-  height: 48px;
+  width: 46px;
+  height: 46px;
   border-radius: var(--radius-pill);
-  background: var(--green-500);
-  box-shadow: 0 4px 10px -3px rgba(15, 122, 74, .6), inset 0 -1.5px 0 rgba(0, 0, 0, .15);
 }
 
-.recap-goal { text-align: center; display: flex; flex-direction: column; gap: 9px; align-items: center; }
-.recap-goal__title { font: 700 26px/1.15 var(--font-display); letter-spacing: -.03em; color: var(--text-strong); }
+.recap-v__headline { margin-top: 8px; font: 700 27px/1.12 var(--font-display); letter-spacing: -.035em; color: var(--text-strong); }
+.recap-v__sub { max-width: 280px; font: 500 13.5px/1.5 var(--font-ui); color: var(--text-body); }
 
-.recap-goal__streak {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 7px 13px;
-  background: var(--gold-50);
-  border-radius: var(--radius-pill);
-  box-shadow: inset 0 0 0 1.5px var(--gold-400);
-  font: 700 13px/1 var(--font-display);
-  color: #5A3B00;
+/* Barre de répartition : segments proportionnels, chacun annoté d'une pastille flottante
+   centrée sur le milieu de sa portion — jamais posée sur sa frontière, qui ne dirait rien. */
+.recap-v__barcard {
+  margin-top: auto;
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--paper-high);
+  border-radius: var(--radius-card);
+  box-shadow: var(--keyline);
+  padding: 36px 18px 20px;
 }
+
+.recap-v__bar { height: 12px; border-radius: 6px; overflow: hidden; display: flex; }
+
+.recap-v__callouts { position: relative; height: 0; }
+.recap-v__callout {
+  position: absolute;
+  transform: translateX(-50%);
+  border-radius: var(--radius-pill);
+  box-shadow: 0 0 0 4px var(--paper-high), 0 6px 14px -6px rgba(33, 31, 20, .5);
+  display: grid;
+  place-items: center;
+  font: 700 1em/1 var(--font-display);
+  letter-spacing: -.03em;
+  color: #FDFBF5;
+}
+
+.recap-v__legend { display: flex; align-items: center; gap: 10px; margin-top: 34px; }
+.recap-v__legenditem { display: flex; align-items: center; gap: 6px; font: 600 12px/1 var(--font-ui); color: var(--text-body); }
+.recap-v__dot { width: 9px; height: 9px; border-radius: 3px; flex: none; }
 
 /* ---------- nav du bas ---------- */
 
