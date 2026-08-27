@@ -742,7 +742,7 @@ input[type="text"]:focus, input[type="number"]:focus {
 
 .ds-qcard__hint { margin-top: 16px; }
 
-.ds-prompt { font: 600 12px/1.25 var(--font-ui); text-transform: uppercase; letter-spacing: .09em; color: var(--text-faint); }
+.ds-prompt { font: 600 10px/1 var(--font-mono); text-transform: uppercase; letter-spacing: .16em; color: var(--text-faint); }
 .ds-word { font: 700 38px/1.18 var(--font-display); letter-spacing: -.03em; color: var(--text-strong); text-wrap: balance; overflow-wrap: anywhere; }
 /* 3 paliers dégressifs (carte découverte) : un mot ou une expression trop longue à la taille
    normale déborderait ou casserait la mise en page — voir wordSizeClass() dans card.js. */
@@ -833,9 +833,20 @@ input[type="text"]:focus, input[type="number"]:focus {
 /* Sens affiché sous la question elle-même, quand elle est posée en français : désambiguë le
    sens demandé avant même de répondre (même info que dans ds-wordinfo, hors encadré, alignée
    comme ds-context puisqu'elle joue le même rôle d'annotation sous le mot posé). */
-.ds-morph__senshint { margin-top: 4px; text-align: center; align-items: center; gap: 4px; }
-.ds-morph__senshint .ds-wordinfo__label::after { content: ' : '; }
-.ds-morph__senshint .ds-wordinfo__label, .ds-morph__senshint .ds-wordinfo__text { display: inline; }
+/* Sens sous la question (français -> anglais) : carte posée, sans étiquette — sa position
+   juste sous le mot suffit à dire son rôle, une étiquette « Sens » concurrencerait le mot
+   qu'on demande de traduire. */
+.ds-morph__senshint {
+  margin-top: 14px;
+  box-sizing: border-box;
+  padding: 16px 18px;
+  border-radius: var(--radius-lg);
+  background: var(--stone-100);
+  border: 1px solid var(--stone-600);
+  box-shadow: 0 0 3px 3px rgba(92, 84, 67, .2);
+  font: 400 13px/1.5 var(--font-ui);
+  color: var(--text-body);
+}
 .ds-result__translation .ds-wordinfo__text { color: rgba(255, 255, 255, .92); }
 
 /* Indice masqué : les lettres révélées s'affichent, les autres restent des créneaux de
@@ -930,7 +941,7 @@ input[type="text"]:focus, input[type="number"]:focus {
 .ds-morph--morphed .ds-morph__wordrows { grid-template-rows: 0fr; }
 .ds-morph__wordclip { overflow: hidden; }
 .ds-morph__word {
-  text-align: center; padding-top: 12px; font-size: 42px; opacity: 1;
+  text-align: center; padding-top: 12px; font-size: 42px; line-height: 1.05; letter-spacing: -.035em; opacity: 1;
   transition: font-size 360ms var(--ease-out), opacity 200ms linear;
 }
 .ds-morph--morphed .ds-morph__word { font-size: 24px; opacity: 0; }
@@ -947,7 +958,13 @@ input[type="text"]:focus, input[type="number"]:focus {
 .ds-morph--committed.ds-morph--wrong .ds-morph__field { border-color: var(--crimson-500); background: var(--crimson-50); }
 .ds-morph--morphed .ds-morph__field { margin-top: 2px; min-height: 0; padding: 0; border-color: transparent; background: transparent; box-shadow: none; }
 
+/* L'input réel garde sa typographie (.ds-field) mais pas son propre cadre : le porter en plus
+   du cadre de .ds-morph__field doublerait bordure/fond/ombre autour d'un même champ. Le halo
+   de focus se pose donc sur le conteneur (:focus-within), pas sur l'input lui-même. */
 .ds-morph__field input { flex: 1; min-width: 0; }
+.ds-morph__field input.ds-field { border: 0; background: transparent; box-shadow: none; padding: 0; min-height: 0; width: auto; }
+.ds-morph__field input.ds-field:focus { box-shadow: none; }
+.ds-morph__field:focus-within { border-color: var(--copper-500); box-shadow: inset 0 2px 5px rgba(33, 31, 20, .14), 0 0 0 3px rgba(176, 74, 15, .45); }
 .ds-morph__typedwrap { position: relative; display: none; align-items: baseline; }
 .ds-morph--committed .ds-morph__field input { display: none; }
 .ds-morph--committed .ds-morph__typedwrap { display: inline-flex; }

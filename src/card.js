@@ -176,7 +176,7 @@ export function morphCardHtml({
             </div>
             ${hint ? `<div class="ds-qcard__hint">${hint}</div>` : ''}
             ${context ? `<div class="ds-context" id="m-qcontext">(${escapeHtml(context)})</div>` : ''}
-            ${sensHint ? `<div class="ds-wordinfo__row ds-morph__senshint"><span class="ds-wordinfo__label">Sens</span><span class="ds-wordinfo__text">${escapeHtml(sensHint)}</span></div>` : ''}
+            ${sensHint ? `<div class="ds-morph__senshint">${escapeHtml(sensHint)}</div>` : ''}
             <div class="ds-morph__field" id="m-field">
               ${answerFieldHtml()}
               <span class="ds-morph__typedwrap">
