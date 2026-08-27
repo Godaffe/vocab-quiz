@@ -83,10 +83,16 @@ function verbFormVariants(word) {
   return variants;
 }
 
+// Verbe seul ou verbe à particule (« turn someone down », « give up ») : seul le premier mot
+// tolère le gérondif/infinitif, le reste de la phrase doit correspondre à l'identique — un
+// verbe à particule ne change jamais de forme ailleurs qu'à son verbe de tête.
 function verbFormsEquivalent(a, b) {
-  if (!a || !b || a.includes(' ') || b.includes(' ')) return false;
-  const variantsA = verbFormVariants(a);
-  for (const v of verbFormVariants(b)) {
+  const wordsA = a ? a.split(' ') : [];
+  const wordsB = b ? b.split(' ') : [];
+  if (wordsA.length === 0 || wordsA.length !== wordsB.length) return false;
+  if (wordsA.slice(1).join(' ') !== wordsB.slice(1).join(' ')) return false;
+  const variantsA = verbFormVariants(wordsA[0]);
+  for (const v of verbFormVariants(wordsB[0])) {
     if (variantsA.has(v)) return true;
   }
   return false;
