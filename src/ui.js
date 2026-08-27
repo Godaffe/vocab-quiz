@@ -410,7 +410,20 @@ function discoverCard(area, { word, pos, example, translation, context, registre
     `;
     const card = area.querySelector('#flip-card');
     const zone = area.querySelector('.session-body');
-    const flip = () => card.classList.toggle('ds-flip--back');
+    // Le sens du retournement suit le geste : le côté touché pour un tap, le sens du
+    // glissement pour un swipe — jamais un sens fixe. `dir` (1 ou -1) ne change que le chemin
+    // de la rotation (voir --flip-dir dans style.css) ; la face retournée est la même dans
+    // les deux cas. `1` = comme si on tournait la carte par sa gauche (déjà le sens d'origine,
+    // conservé pour un tap côté gauche ou un glissement vers la gauche).
+    const flip = (dir) => {
+      card.style.setProperty('--flip-dir', String(dir));
+      card.classList.toggle('ds-flip--back');
+    };
+    const flipFromTap = (e) => {
+      const rect = card.getBoundingClientRect();
+      const x = typeof e.clientX === 'number' && e.clientX !== 0 ? e.clientX : rect.left + rect.width / 2;
+      flip(x - rect.left < rect.width / 2 ? 1 : -1);
+    };
 
     // Entrée de la carte (remonte de 14px) et inclinaison à la prise — l'anticipation courte
     // qui annonce le retournement ou le passage avant même que le geste soit achevé.
@@ -429,8 +442,8 @@ function discoverCard(area, { word, pos, example, translation, context, registre
     // Le glissement (haut ou latéral) couvre toute la zone entre l'en-tête et le bouton, pas
     // seulement la carte — plus simple à déclencher au pouce sans viser précisément la carte.
     // Le tap pour retourner reste, lui, propre à la carte.
-    onSwipe(zone, { onLeft: flip, onRight: flip, onUp: next });
-    onCardTap(card, flip);
+    onSwipe(zone, { onLeft: () => flip(1), onRight: () => flip(-1), onUp: next });
+    onCardTap(card, flipFromTap);
     area.querySelector('#next-btn').addEventListener('click', next);
   });
 }

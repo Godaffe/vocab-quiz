@@ -635,9 +635,15 @@ input[type="text"]:focus, input[type="number"]:focus {
   perspective: 1400px; touch-action: none; cursor: pointer;
   transition: transform 160ms var(--ease-out), opacity 160ms linear;
   will-change: transform;
+  --flip-dir: 1;
 }
 .ds-flip__inner { position: relative; flex: 1; min-height: 0; transform-style: preserve-3d; transition: transform var(--dur-flip) var(--ease-in-out); }
-.ds-flip--back .ds-flip__inner { transform: rotateY(180deg); }
+/* Le sens du retournement suit le geste (tap du côté touché, ou sens du glissement latéral) :
+   --flip-dir vaut 1 ou -1, posé en JS juste avant de retourner la carte, voir onCardTap/
+   onSwipe dans main.js. Les deux sens aboutissent visuellement à la même face (rotateY(180deg)
+   et rotateY(-180deg) rendent la face identique, non miroir), seul le chemin de la rotation
+   change — donc rien à ajuster sur .ds-flip__face--back, toujours pré-tournée à 180deg. */
+.ds-flip--back .ds-flip__inner { transform: rotateY(calc(var(--flip-dir) * 180deg)); }
 
 .ds-flip__face {
   position: absolute;
