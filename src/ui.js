@@ -1109,8 +1109,10 @@ export async function renderSessionRecap(container, tally, { onHome, onReview })
         </div>
         <div class="recap-v__check" style="background:${a.color};box-shadow:0 6px 14px -4px ${a.shadow},inset 0 -1.5px 0 rgba(33,31,20,.2)">${icon('check', { size: 22, color: '#FDFBF5', stroke: 3.2 })}</div>
       </div>
-      <div class="recap-v__headline">${escapeHtml(headline)}</div>
-      ${sub ? `<div class="recap-v__sub">${escapeHtml(sub)}</div>` : ''}
+      <div class="recap-v__body">
+        <div class="recap-v__headline">${escapeHtml(headline)}</div>
+        ${sub ? `<div class="recap-v__sub">${escapeHtml(sub)}</div>` : ''}
+      </div>
       ${segments ? recapBarHtml(segments) : ''}
     </div>
     <div class="session-foot">

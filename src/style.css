@@ -1122,9 +1122,15 @@ body.recap-bg-tricky { background: var(--cat-tricky-soft); }
 
 .recap-v { align-items: center; text-align: center; gap: 14px; padding-top: 8px; }
 
-.recap-v__eyebrow { font: 600 10px/1 var(--font-mono); letter-spacing: .18em; text-transform: uppercase; }
+/* La grappe éyebrow/anneau/titre se centre dans l'espace laissé libre au-dessus de la carte
+   de répartition (quand il y en a une) plutôt que de rester collée en haut pendant que cette
+   carte, elle, était jusqu'ici repoussée tout en bas par son propre margin-top:auto — les deux
+   marges automatiques (ici et sur .recap-v__body) se partagent l'espace à parts égales. Sans
+   carte (découverte, qui n'a rien à répartir), les deux mêmes marges centrent simplement toute
+   la grappe dans l'écran, comme le ferait .session-body à elle seule. */
+.recap-v__eyebrow { margin-top: auto; font: 600 10px/1 var(--font-mono); letter-spacing: .18em; text-transform: uppercase; }
 
-.recap-v__ringwrap { position: relative; margin-top: 6px; }
+.recap-v__ringwrap { position: relative; margin-top: 14px; }
 
 .recap-v__ring {
   width: 204px;
@@ -1165,13 +1171,13 @@ body.recap-bg-tricky { background: var(--cat-tricky-soft); }
   border-radius: var(--radius-pill);
 }
 
-.recap-v__headline { margin-top: 8px; font: 700 27px/1.12 var(--font-display); letter-spacing: -.035em; color: var(--text-strong); }
+.recap-v__body { margin-top: 22px; margin-bottom: auto; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.recap-v__headline { font: 700 27px/1.12 var(--font-display); letter-spacing: -.035em; color: var(--text-strong); }
 .recap-v__sub { max-width: 280px; font: 500 13.5px/1.5 var(--font-ui); color: var(--text-body); }
 
 /* Barre de répartition : segments proportionnels, chacun annoté d'une pastille flottante
    centrée sur le milieu de sa portion — jamais posée sur sa frontière, qui ne dirait rien. */
 .recap-v__barcard {
-  margin-top: auto;
   width: 100%;
   box-sizing: border-box;
   background: var(--paper-high);
