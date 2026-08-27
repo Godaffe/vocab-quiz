@@ -484,7 +484,7 @@ function morphCard(area, {
       settled = true;
       const raw = input.value;
       const isCorrect = checkFn(raw);
-      const verdictIcon = icon(isCorrect ? 'check' : 'x', { size: 30, color: '#fff', stroke: 3.4 });
+      const verdictIcon = icon(isCorrect ? 'check' : 'x', { size: 13, color: '#fff', stroke: 3.4 });
       const verdictIconSm = icon(isCorrect ? 'check' : 'x', { size: 18, color: '#fff', stroke: 3.4 });
       const consequence = getConsequence ? await getConsequence(raw, isCorrect) : null;
 

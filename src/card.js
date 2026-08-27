@@ -133,15 +133,16 @@ function fieldCardHtml(label, text, variant) {
   `;
 }
 
-// Bloc de précisions sur le mot français : registre (soutenu/normal/familier, en pastille),
-// puis sens (nuance de traduction) et usage (construction grammaticale), chacun affiché
-// seulement s'il est renseigné dans le classeur — jamais dans la réponse attendue.
-function wordInfoHtml({ registre, sens, usage }) {
-  if (!registre && !sens && !usage) return '';
-  const registreBadge = registre ? `<span class="ds-badge ds-wordinfo__register">${escapeHtml(registre)}</span>` : '';
-  const sensRow = sens ? `<div class="ds-wordinfo__row"><span class="ds-wordinfo__label">Sens</span><span class="ds-wordinfo__text">${escapeHtml(sens)}</span></div>` : '';
-  const usageRow = usage ? `<div class="ds-wordinfo__row"><span class="ds-wordinfo__label">Usage</span><span class="ds-wordinfo__text">${escapeHtml(usage)}</span></div>` : '';
-  return `<div class="ds-wordinfo">${registreBadge}${sensRow}${usageRow}</div>`;
+// Fait ressortir le premier mot de la réponse attendue dans l'exemple, en gras et coloré
+// selon le verdict — le reste du texte reste en italique ordinaire. Les réponses à plusieurs
+// mots ne mettent en évidence que le premier : au-delà, l'exemple resterait ambigu à repérer.
+function highlightAnswer(text, answer) {
+  const escaped = escapeHtml(text);
+  const firstWord = String(answer ?? '').trim().split(/\s+/)[0];
+  if (!firstWord) return escaped;
+  const escapedWord = escapeHtml(firstWord).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`\\b(${escapedWord})\\b`, 'i');
+  return escaped.replace(re, '<span class="ds-result__hl">$1</span>');
 }
 
 export function answerFieldHtml({ placeholder = 'Ta réponse' } = {}) {
@@ -174,24 +175,30 @@ export function morphCardHtml({
             <div class="ds-morph__wordrows">
               <div class="ds-morph__wordclip"><div class="ds-word ds-morph__word">${escapeHtml(question)}</div></div>
             </div>
+            ${(pos || registre) ? `
+            <div class="ds-morph__posrows">
+              <div class="ds-morph__posclip" style="padding-top:8px">
+                ${pos ? `<span class="ds-pos">${escapeHtml(pos)}</span>` : ''}
+                ${registre ? `<span class="ds-pos ds-pos--registre">${escapeHtml(registre)}</span>` : ''}
+              </div>
+            </div>` : ''}
             ${hint ? `<div class="ds-qcard__hint">${hint}</div>` : ''}
             ${context ? `<div class="ds-context" id="m-qcontext">(${escapeHtml(context)})</div>` : ''}
             ${sensHint ? `<div class="ds-morph__senshint">${escapeHtml(sensHint)}</div>` : ''}
             <div class="ds-morph__field" id="m-field">
               ${answerFieldHtml()}
               <span class="ds-morph__typedwrap">
-                <span class="ds-morph__typed" id="m-typed"></span>
-                <span class="ds-morph__strike"></span>
+                <span class="ds-morph__triedlabel">Ta réponse</span>
+                <span class="ds-morph__typedinner">
+                  <span class="ds-morph__typed" id="m-typed"></span>
+                  <span class="ds-morph__strike"></span>
+                </span>
               </span>
               <span class="ds-morph__fdisc" id="m-fdisc"></span>
             </div>
             <div class="ds-morph__answerrows">
               <div class="ds-morph__answerclip"><div class="ds-result__answer" style="padding-top:6px">${escapeHtml(answer)}</div></div>
             </div>
-            ${pos ? `
-            <div class="ds-morph__posrows">
-              <div class="ds-morph__posclip" style="padding-top:8px"><span class="ds-pos">${escapeHtml(pos)}</span></div>
-            </div>` : ''}
           </div>
         </div>
       </div>
@@ -199,15 +206,13 @@ export function morphCardHtml({
         <div class="ds-morph__blocksclip">
           ${translation ? `
           <div class="ds-result__translation" id="m-translation">
-            <div class="ds-result__blocklabel">Traduction</div>
             <div class="ds-result__blockvalue">${escapeHtml(translation)}</div>
             ${resultContext ? `<div class="ds-context" id="m-rcontext" style="display:none">(${escapeHtml(resultContext)})</div>` : ''}
-            ${wordInfoHtml({ registre, sens, usage })}
+            ${sens ? `<div class="ds-result__sens">${escapeHtml(sens)}</div>` : ''}
           </div>` : ''}
           ${example ? `
           <div class="ds-result__example">
-            <div class="ds-result__blocklabel">Exemple / règle</div>
-            <div class="ds-result__blockvalue">${escapeHtml(example)}</div>
+            <div class="ds-result__blockvalue">${highlightAnswer(example, answer)}</div>
           </div>` : ''}
         </div>
       </div>

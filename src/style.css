@@ -826,9 +826,6 @@ input[type="text"]:focus, input[type="number"]:focus {
 .ds-wordinfo__row { display: flex; flex-direction: column; gap: 2px; }
 .ds-wordinfo__label { font: 600 10px/1 var(--font-ui); letter-spacing: .1em; text-transform: uppercase; color: var(--text-faint); }
 .ds-wordinfo__text { font: 400 13px/1.5 var(--font-ui); color: var(--text-body); }
-.ds-result__translation .ds-wordinfo { background: rgba(255, 255, 255, .14); box-shadow: none; }
-.ds-result__translation .ds-wordinfo__register { background: rgba(255, 255, 255, .22); color: #fff; }
-.ds-result__translation .ds-wordinfo__label { color: rgba(255, 255, 255, .72); }
 
 /* Sens affiché sous la question elle-même, quand elle est posée en français : désambiguë le
    sens demandé avant même de répondre (même info que dans ds-wordinfo, hors encadré, alignée
@@ -847,7 +844,6 @@ input[type="text"]:focus, input[type="number"]:focus {
   font: 400 13px/1.5 var(--font-ui);
   color: var(--text-body);
 }
-.ds-result__translation .ds-wordinfo__text { color: rgba(255, 255, 255, .92); }
 
 /* Indice masqué : les lettres révélées s'affichent, les autres restent des créneaux de
    largeur fixe — les limites de mots restent lisibles sans compter des tirets. */
@@ -858,18 +854,27 @@ input[type="text"]:focus, input[type="number"]:focus {
 
 /* ---------- blocs traduction / exemple (dépliés par la carte à fusion) ---------- */
 
-.ds-result__answer { font: 700 30px/1.1 var(--font-display); letter-spacing: -.03em; color: var(--text-strong); }
-.ds-result__answer + .ds-pos { margin-top: 8px; }
-.ds-result__translation { padding: var(--space-4) var(--card-pad); background: var(--stone-500); }
-.ds-morph--correct .ds-result__translation { background: var(--green-600); }
-.ds-morph--wrong .ds-result__translation { background: var(--crimson-600); }
-.ds-result__translation .ds-result__blocklabel { color: rgba(255, 255, 255, .72); }
-.ds-result__translation .ds-result__blockvalue { font: 600 18px/1.35 var(--font-ui); color: #fff; }
-.ds-result__translation .ds-context { color: rgba(255, 255, 255, .75); text-align: left; }
-.ds-result__example { padding: var(--space-4) var(--card-pad) var(--space-5); background: var(--paper); border-left: 4px solid var(--copper-300); box-shadow: var(--inset-well); }
-.ds-morph--correct .ds-result__example { border-left-color: var(--green-500); }
-.ds-morph--wrong .ds-result__example { border-left-color: var(--crimson-500); }
-.ds-result__example .ds-result__blockvalue { font: 400 16px/1.5 var(--font-ui); color: var(--text-body); font-style: italic; }
+.ds-result__answer { font: 700 44px/1.05 var(--font-display); letter-spacing: -.035em; color: var(--text-strong); text-align: center; }
+.ds-morph--tinted .ds-result__answer { color: #fff; }
+
+/* Le bandeau traduction/sens reprend le mot posé (jamais la réponse, déjà géante dans
+   l'en-tête) sur une teinte claire — inverse du bandeau du verdict, saturé lui. */
+.ds-result__translation { padding: var(--space-4) var(--card-pad); background: var(--stone-100); box-shadow: inset 0 -1px 0 var(--ink-200); text-align: center; }
+.ds-morph--correct .ds-result__translation { background: var(--green-50); }
+.ds-morph--wrong .ds-result__translation { background: var(--crimson-50); }
+.ds-result__translation .ds-result__blockvalue { font: 700 20px/1.2 var(--font-display); letter-spacing: -.02em; color: var(--text-strong); }
+.ds-result__translation .ds-context { color: var(--text-muted); text-align: center; }
+.ds-result__sens { margin-top: 4px; font: 400 12.5px/1.45 var(--font-ui); color: var(--text-muted); }
+
+.ds-result__example { padding: var(--space-4) var(--card-pad) var(--space-5); }
+.ds-result__example .ds-result__blockvalue {
+  box-sizing: border-box; padding: 11px 14px; border-radius: var(--radius-lg);
+  background: var(--stone-100); box-shadow: inset 0 0 0 1px #5C5443;
+  font: 400 13px/1.5 var(--font-ui); color: var(--text-body); font-style: italic;
+}
+.ds-result__hl { font-weight: 700; font-style: normal; }
+.ds-morph--correct .ds-result__hl { color: var(--green-600); }
+.ds-morph--wrong .ds-result__hl { color: var(--crimson-600); }
 .ds-result__blocklabel { font: 600 12px/1.25 var(--font-ui); text-transform: uppercase; letter-spacing: .09em; color: var(--text-muted); margin-bottom: 4px; }
 
 /* ---------- carte à fusion : question devient résultat ---------- */
@@ -908,8 +913,8 @@ input[type="text"]:focus, input[type="number"]:focus {
   transition: padding 360ms var(--ease-out), background-color 300ms linear, border-bottom-color 300ms linear;
 }
 .ds-morph--tinted .ds-morph__head { padding: var(--space-5) var(--card-pad); }
-.ds-morph--tinted.ds-morph--correct .ds-morph__head { background: var(--green-50); border-bottom-color: var(--green-100); }
-.ds-morph--tinted.ds-morph--wrong .ds-morph__head { background: var(--crimson-50); border-bottom-color: var(--crimson-100); }
+.ds-morph--tinted.ds-morph--correct .ds-morph__head { background: var(--green-500); border-bottom-color: var(--green-600); }
+.ds-morph--tinted.ds-morph--wrong .ds-morph__head { background: var(--crimson-500); border-bottom-color: var(--crimson-600); }
 
 .ds-morph__flood {
   position: absolute; inset: 0; opacity: 0; pointer-events: none;
@@ -917,25 +922,29 @@ input[type="text"]:focus, input[type="number"]:focus {
   transition: transform 360ms var(--ease-out), opacity 200ms linear;
 }
 .ds-morph--tinted .ds-morph__flood { opacity: 1; transform: scale(1, 1); }
-.ds-morph--correct .ds-morph__flood { background: var(--green-50); }
-.ds-morph--wrong .ds-morph__flood { background: var(--crimson-50); }
+.ds-morph--correct .ds-morph__flood { background: var(--green-500); }
+.ds-morph--wrong .ds-morph__flood { background: var(--crimson-500); }
 
+/* En pleine couleur, l'en-tête bascule d'une ligne icône+mot horizontale à une colonne
+   centrée : petit badge de verdict, mot en toutes lettres, pastilles nature/registre, puis
+   réponse fautive s'il y a lieu — tout empile plutôt que s'aligne à gauche du disque. */
 .ds-morph__row { position: relative; display: flex; align-items: flex-start; gap: 0; transition: gap 360ms var(--ease-out); }
-.ds-morph--tinted .ds-morph__row { gap: var(--space-4); }
+.ds-morph--tinted .ds-morph__row { gap: 10px; flex-direction: column; align-items: stretch; }
 
 .ds-morph__disc {
   width: 0; height: 0; flex: 0 0 0; overflow: hidden; opacity: 0; transform: scale(.5);
   border-radius: var(--radius-pill); display: grid; place-items: center; color: #fff;
   transition: width 360ms var(--ease-out), flex-basis 360ms var(--ease-out), transform 360ms var(--ease-spring), opacity 180ms linear;
 }
-.ds-morph--tinted .ds-morph__disc { width: 56px; height: 56px; flex-basis: 56px; opacity: 1; transform: scale(1); }
-.ds-morph--correct .ds-morph__disc { background: var(--green-500); box-shadow: var(--shadow-correct); }
-.ds-morph--wrong .ds-morph__disc { background: var(--crimson-500); box-shadow: var(--shadow-wrong); }
+.ds-morph--tinted .ds-morph__disc {
+  width: 22px; height: 22px; flex-basis: 22px; opacity: 1; transform: scale(1); align-self: center;
+  background: rgba(253, 251, 245, .22); box-shadow: inset 0 0 0 1px rgba(253, 251, 245, .5);
+}
 
 .ds-morph__col { min-width: 0; flex: 1; }
+.ds-morph--tinted .ds-morph__col { text-align: center; }
 .ds-morph__label { color: var(--text-faint); transition: color 240ms linear; }
-.ds-morph--tinted.ds-morph--correct .ds-morph__label { color: var(--green-600); }
-.ds-morph--tinted.ds-morph--wrong .ds-morph__label { color: var(--crimson-600); }
+.ds-morph--tinted .ds-morph__label { color: rgba(255, 255, 255, .85); }
 
 .ds-morph__wordrows { display: grid; grid-template-rows: 1fr; transition: grid-template-rows 360ms var(--ease-out); }
 .ds-morph--morphed .ds-morph__wordrows { grid-template-rows: 0fr; }
@@ -957,6 +966,17 @@ input[type="text"]:focus, input[type="number"]:focus {
 .ds-morph--committed.ds-morph--correct .ds-morph__field { border-color: var(--green-500); background: var(--green-50); }
 .ds-morph--committed.ds-morph--wrong .ds-morph__field { border-color: var(--crimson-500); background: var(--crimson-50); }
 .ds-morph--morphed .ds-morph__field { margin-top: 2px; min-height: 0; padding: 0; border-color: transparent; background: transparent; box-shadow: none; }
+/* En fin de dépli, le disque de champ (déjà répété par celui de l'en-tête) s'efface, et « ta
+   réponse » (uniquement sur échec) se centre en colonne plutôt qu'en ligne avec lui. */
+.ds-morph--unfolded .ds-morph__fdisc { display: none; }
+.ds-morph--unfolded .ds-morph__field { justify-content: center; }
+.ds-morph--unfolded.ds-morph--wrong .ds-morph__field { flex-direction: column; align-items: center; gap: 2px; }
+/* Le carton vert/cramoisi clair du champ (pensé pour se fondre dans l'ancien en-tête, lui
+   aussi clair) redevient visible — et jure — sur le nouvel en-tête saturé : transparent une
+   fois la carte dépliée, quel que soit le verdict. Spécificité volontairement plus haute que
+   .ds-morph--committed.ds-morph--correct/wrong .ds-morph__field pour gagner sur elle. */
+.ds-morph--morphed.ds-morph--committed.ds-morph--correct .ds-morph__field,
+.ds-morph--morphed.ds-morph--committed.ds-morph--wrong .ds-morph__field { background: transparent; border-color: transparent; box-shadow: none; }
 
 /* L'input réel garde sa typographie (.ds-field) mais pas son propre cadre : le porter en plus
    du cadre de .ds-morph__field doublerait bordure/fond/ombre autour d'un même champ. Le halo
@@ -968,16 +988,29 @@ input[type="text"]:focus, input[type="number"]:focus {
 .ds-morph__typedwrap { position: relative; display: none; align-items: baseline; }
 .ds-morph--committed .ds-morph__field input { display: none; }
 .ds-morph--committed .ds-morph__typedwrap { display: inline-flex; }
+/* « Ta réponse » : étiquette posée au-dessus du mot fautif, dans un carton translucide sur
+   le fond saturé du verdict — masquée hors de l'état final raté, où elle ne veut rien dire. */
+.ds-morph__triedlabel { display: none; }
+.ds-morph--unfolded.ds-morph--wrong .ds-morph__typedwrap {
+  flex-direction: column; align-items: center; gap: 4px;
+  background: rgba(33, 31, 20, .2); border-radius: 12px; padding: 8px 14px;
+}
+.ds-morph--unfolded.ds-morph--wrong .ds-morph__triedlabel {
+  display: block; font: 600 9.5px/1 var(--font-mono); letter-spacing: .14em; text-transform: uppercase;
+  color: rgba(255, 255, 255, .7);
+}
+.ds-morph__typedinner { position: relative; display: inline-flex; align-items: baseline; }
 .ds-morph__typed {
   font: 600 18px/1.15 var(--font-display); letter-spacing: -.02em; color: var(--text-strong);
   transition: font-size 360ms var(--ease-out), color 220ms linear;
 }
-.ds-morph--morphed .ds-morph__typed { font-size: 30px; }
+.ds-morph--tinted .ds-morph__typed { color: #fff; }
+.ds-morph--morphed.ds-morph--correct .ds-morph__typed { font-size: 44px; letter-spacing: -.035em; }
 .ds-morph--morphed.ds-morph--wrong .ds-morph__typed { font-size: 17px; }
-.ds-morph--struck .ds-morph__typed { color: var(--text-muted); }
+.ds-morph--struck .ds-morph__typed { color: rgba(255, 255, 255, .7); }
 .ds-morph__strike {
   position: absolute; left: -2px; right: -2px; top: 54%; height: 2.5px; border-radius: 2px;
-  background: var(--crimson-500); transform: scaleX(0); transform-origin: left center;
+  background: rgba(255, 255, 255, .7); transform: scaleX(0); transform-origin: left center;
   transition: transform 240ms var(--ease-out);
 }
 .ds-morph--struck .ds-morph__strike { transform: scaleX(1); }
@@ -1001,7 +1034,13 @@ input[type="text"]:focus, input[type="number"]:focus {
   transition: opacity 240ms linear, transform 300ms var(--ease-out);
 }
 .ds-morph--morphed.ds-morph--wrong .ds-morph__answerclip { opacity: 1; transform: translateY(0); }
-.ds-morph--morphed .ds-morph__posclip { opacity: 1; transform: translateY(0); transition: opacity 220ms linear; }
+.ds-morph--morphed .ds-morph__posclip {
+  opacity: 1; transform: translateY(0); transition: opacity 220ms linear;
+  display: flex; gap: 6px; justify-content: center; flex-wrap: wrap;
+}
+/* Nature et registre passent en pastilles translucides sur le fond saturé du verdict — la
+   même .ds-pos qu'ailleurs (fond teal clair) jurerait sur du vert ou du cramoisi plein. */
+.ds-morph--tinted .ds-pos { background: rgba(255, 255, 255, .2); color: #fff; box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, .45); }
 
 .ds-morph__blocksrows { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 340ms var(--ease-out); }
 .ds-morph--unfolded .ds-morph__blocksrows { grid-template-rows: 1fr; }
