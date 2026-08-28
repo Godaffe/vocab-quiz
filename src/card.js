@@ -210,6 +210,10 @@ export function morphCardHtml({
             ${resultContext ? `<div class="ds-context" id="m-rcontext" style="display:none">(${escapeHtml(resultContext)})</div>` : ''}
             ${sens ? `<div class="ds-result__sens">${escapeHtml(sens)}</div>` : ''}
           </div>` : ''}
+          ${usage ? `
+          <div class="ds-result__usage">
+            <div class="ds-result__blockvalue">${escapeHtml(usage)}</div>
+          </div>` : ''}
           ${example ? `
           <div class="ds-result__example">
             <div class="ds-result__blockvalue">${highlightAnswer(example, answer)}</div>

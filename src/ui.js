@@ -474,8 +474,11 @@ function morphCard(area, {
       <div class="session-body">
         ${remaining > 0 ? cardStackHtml(remaining, card) : card}
       </div>
-      <div class="session-foot">
-        <button type="button" class="ds-btn ds-btn--hero" id="submit-btn">Valider</button>
+      <div class="session-foot" id="mode-foot">
+        <button type="button" class="ds-btn ds-btn--hero" id="submit-btn">
+          <span class="ds-btn__label ds-btn__label--q">Valider</span>
+          <span class="ds-btn__label ds-btn__label--a" id="submit-label-a">Suivant</span>
+        </button>
         <button type="button" class="ds-btn ds-btn--hero ds-btn--ghost" id="skip-btn">Passer</button>
       </div>
     `;
@@ -488,9 +491,13 @@ function morphCard(area, {
     const fdisc = area.querySelector('#m-fdisc');
     const rcontext = area.querySelector('#m-rcontext');
     const submitBtn = area.querySelector('#submit-btn');
+    const submitLabelA = area.querySelector('#submit-label-a');
     const skipBtn = area.querySelector('#skip-btn');
-    const foot = area.querySelector('.session-foot');
+    const foot = area.querySelector('#mode-foot');
     let settled = false;
+    let answered = false;
+    let lastAnswer = '';
+    let lastCorrect = false;
 
     const skip = () => {
       if (settled) return;
@@ -503,6 +510,8 @@ function morphCard(area, {
       settled = true;
       const raw = input.value;
       const isCorrect = checkFn(raw);
+      lastAnswer = raw;
+      lastCorrect = isCorrect;
       const verdictIcon = icon(isCorrect ? 'check' : 'x', { size: 13, color: '#fff', stroke: 3.4 });
       const verdictIconSm = icon(isCorrect ? 'check' : 'x', { size: 18, color: '#fff', stroke: 3.4 });
       const consequence = getConsequence ? await getConsequence(raw, isCorrect) : null;
@@ -511,39 +520,39 @@ function morphCard(area, {
       disc.innerHTML = verdictIcon;
       fdisc.innerHTML = verdictIconSm;
       input.disabled = true;
-      submitBtn.disabled = true;
-      skipBtn.disabled = true;
-      root.classList.add('ds-morph--committing', 'ds-morph--committed', isCorrect ? 'ds-morph--correct' : 'ds-morph--wrong');
-
-      await wait(200); // commit
-      root.classList.remove('ds-morph--committing');
-      root.classList.add('ds-morph--tinted');
       label.textContent = isCorrect ? 'Correct' : 'Réponse attendue';
-
-      if (!isCorrect) {
-        root.classList.add('ds-morph--struck');
-        await wait(240); // trait
-      }
-
-      root.classList.add('ds-morph--morphed');
+      // Le bouton reste cuivre même sur un échec (comme la maquette) : « Réessayer » n'est pas
+      // un second refus, c'est la reprise volontaire de la même question.
+      submitLabelA.textContent = isCorrect ? 'Suivant' : 'Réessayer';
       if (rcontext && !isCorrect) rcontext.style.display = '';
-      await wait(360); // morphose
 
-      root.classList.add('ds-morph--unfolded');
+      // Un seul basculement d'état porte tout le dépli : chaque partie (teinte du champ, bande
+      // qui monte, mot qui descend, chrome du verdict, encadrés usage/exemple) a son propre
+      // délai/durée en CSS (voir le commentaire de bloc « carte à fusion » dans style.css) —
+      // rien n'attend ici entre des étapes, le CSS choréographie tout le décalage d'un coup.
+      root.classList.add(
+        'ds-morph--committed', isCorrect ? 'ds-morph--correct' : 'ds-morph--wrong',
+        'ds-morph--tinted', 'ds-morph--morphed', 'ds-morph--unfolded',
+      );
+      if (!isCorrect) root.classList.add('ds-morph--struck');
+      answered = true;
+      foot.classList.add('session-foot--answered');
+
+      // La conséquence Leitner n'apparaît qu'une fois le dépli installé, pas dès la réponse.
       if (consequence) {
+        await wait(700);
         const consequenceHtmlBlock = typeof consequence === 'string'
           ? `<div class="ds-alert ds-alert--success">${escapeHtml(consequence)}</div>`
           : consequenceHtml(consequence);
         area.querySelector('.session-body').insertAdjacentHTML('beforeend', consequenceHtmlBlock);
       }
-      foot.innerHTML = `<button type="button" class="ds-btn ds-btn--hero${isCorrect ? '' : ' ds-btn--dark'}" id="next-btn">${isCorrect ? 'Suivant' : 'Réessayer'}</button>`;
-      const finish = () => resolve({ answer: raw, isCorrect });
-      // Un clic n'importe où sur la carte suffit à continuer : plus besoin de viser le bouton.
-      onCardTap(root, finish);
-      foot.querySelector('#next-btn').addEventListener('click', finish);
     };
 
-    submitBtn.addEventListener('click', submit);
+    const finish = () => resolve({ answer: lastAnswer, isCorrect: lastCorrect });
+    // Une fois répondu, le même bouton (relibellé Suivant/Réessayer) fait continuer ; un clic
+    // n'importe où sur la carte le fait tout autant, plus besoin de viser le bouton.
+    submitBtn.addEventListener('click', () => (answered ? finish() : submit()));
+    onCardTap(root, () => { if (answered) finish(); });
     skipBtn.addEventListener('click', skip);
     // Le glissement latéral pour passer fonctionne sur toute la zone entre l'en-tête et les
     // boutons, pas seulement la carte de question — le champ de saisie garde son geste natif
