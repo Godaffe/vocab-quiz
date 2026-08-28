@@ -879,6 +879,9 @@ input[type="text"]:focus, input[type="number"]:focus {
   font: 400 13px/1.5 var(--font-ui);
   color: var(--text-body);
 }
+/* Une fois la carte validée, le sens revient déjà dans le bandeau traduction
+   (.ds-result__sens) : le répéter ici aussi, sous le mot français, ferait doublon. */
+.ds-morph--committed .ds-morph__senshint { display: none; }
 
 /* Indice masqué : les lettres révélées s'affichent, les autres restent des créneaux de
    largeur fixe — les limites de mots restent lisibles sans compter des tirets. */
