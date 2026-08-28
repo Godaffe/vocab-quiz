@@ -986,7 +986,12 @@ input[type="text"]:focus, input[type="number"]:focus {
   background: rgba(253, 251, 245, .22); box-shadow: inset 0 0 0 1px rgba(253, 251, 245, .5);
 }
 
-.ds-morph__col { min-width: 0; flex: 1; }
+.ds-morph__col { min-width: 0; flex: 1; display: flex; flex-direction: column; }
+/* Une fois la carte dépliée, la pastille nature/registre doit annoter le mot final révélé (la
+   saisie agrandie si la réponse est juste, la solution en toutes lettres sinon) — pas l'inverse.
+   L'ordre du DOM reste celui de l'état question (pastille juste sous le mot posé, inchangé) ;
+   `order` la fait seulement glisser après le champ/la solution une fois morphée. */
+.ds-morph--morphed .ds-morph__posrows { order: 10; }
 .ds-morph--tinted .ds-morph__col { text-align: center; }
 .ds-morph__label { color: var(--text-faint); transition: color 220ms linear 500ms; }
 .ds-morph--tinted .ds-morph__label { color: rgba(255, 255, 255, .85); }
