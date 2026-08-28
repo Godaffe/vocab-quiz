@@ -772,6 +772,10 @@ input[type="text"]:focus, input[type="number"]:focus {
 /* ---------- carte question (indice de reprise, réutilisé par la carte à fusion) ---------- */
 
 .ds-qcard__hint { margin-top: 16px; }
+/* Une fois validée, la réponse exacte s'affiche déjà en toutes lettres juste en dessous
+   (.ds-result__answer) : l'indice à trous de la reprise n'apporte plus rien sur la carte
+   résultat, on ne le laisse que pendant la saisie. */
+.ds-morph--committed .ds-qcard__hint { display: none; }
 
 .ds-prompt { font: 600 10px/1 var(--font-mono); text-transform: uppercase; letter-spacing: .16em; color: var(--text-faint); }
 .ds-word { font: 700 38px/1.18 var(--font-display); letter-spacing: -.03em; color: var(--text-strong); text-wrap: balance; overflow-wrap: anywhere; }
