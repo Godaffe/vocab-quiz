@@ -425,9 +425,17 @@ function discoverCard(area, { word, pos, example, translation, context, registre
       card.style.setProperty('--flip-dir', String(dir));
       card.classList.toggle('ds-flip--back');
     };
+    // Le clic « click » qui suit un tap tactile (touch-action: none impose ce détour) remonte
+    // souvent avec un clientX à 0 — un bug connu des navigateurs mobiles, pas une vraie position
+    // au centre de l'écran. On capte donc la position réelle du doigt dès le pointerdown (fiable
+    // dans tous les cas, tactile ou souris), et on ne retombe sur le clic lui-même que si aucun
+    // pointerdown n'a été vu avant (clic déclenché par un autre moyen, ex. programmatique).
+    let tapX = null;
+    card.addEventListener('pointerdown', (e) => { tapX = e.clientX; });
     const flipFromTap = (e) => {
       const rect = card.getBoundingClientRect();
-      const x = typeof e.clientX === 'number' && e.clientX !== 0 ? e.clientX : rect.left + rect.width / 2;
+      const clientX = typeof tapX === 'number' && tapX !== 0 ? tapX : e.clientX;
+      const x = typeof clientX === 'number' && clientX !== 0 ? clientX : rect.left + rect.width / 2;
       flip(x - rect.left < rect.width / 2 ? 1 : -1);
     };
 
