@@ -434,11 +434,23 @@ function flipTransform(fromRect, toRect) {
   return `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`;
 }
 
+// Minutage exact de la maquette « Ouverture de session » : 180 ms à l'aller (accélère puis
+// ralentit franchement, cubic-bezier(.22,.7,.2,1)), 126 ms au retour — 70 % de l'aller, jamais
+// un simple aller rejoué à l'envers — avec une courbe plus abrupte (cubic-bezier(.4,0,.7,.2)).
+// L'opacité suit la même courbe que le transform, juste sur une fenêtre plus courte (70 ms /
+// 49 ms) : les deux se resserrent ensemble, ce n'est jamais un fondu linéaire indépendant.
+const GROW_MS = 180;
+const GROW_OPACITY_MS = 70;
+const GROW_EASE = 'cubic-bezier(.22,.7,.2,1)';
+const SHRINK_MS = Math.round(GROW_MS * 0.7);
+const SHRINK_OPACITY_MS = Math.round(GROW_OPACITY_MS * 0.7);
+const SHRINK_EASE = 'cubic-bezier(.4,0,.7,.2)';
+
 // Entrée : `el` est déjà à sa taille finale plein écran — on le pose d'abord (sans transition)
 // à la position/taille de `tileRect`, puis on relâche vers l'identité à la trame suivante.
 // Sans ce report d'une trame, le navigateur regroupe départ et arrivée en un seul état, et
 // rien ne s'anime.
-export function growFromRect(el, tileRect, { duration = 420 } = {}) {
+export function growFromRect(el, tileRect, { duration = GROW_MS, opacityDuration = GROW_OPACITY_MS, ease = GROW_EASE } = {}) {
   return new Promise((resolve) => {
     const finalRect = el.getBoundingClientRect();
     el.style.transformOrigin = 'center center';
@@ -447,7 +459,7 @@ export function growFromRect(el, tileRect, { duration = 420 } = {}) {
     el.style.opacity = '0';
     el.getBoundingClientRect(); // force le calcul de style avant de relâcher
     requestAnimationFrame(() => {
-      el.style.transition = `transform ${duration}ms var(--ease-spring), opacity ${Math.round(duration * 0.6)}ms linear`;
+      el.style.transition = `transform ${duration}ms ${ease}, opacity ${opacityDuration}ms ${ease}`;
       el.style.transform = 'none';
       el.style.opacity = '1';
     });
@@ -464,11 +476,11 @@ export function growFromRect(el, tileRect, { duration = 420 } = {}) {
 // Sortie : l'inverse — `el` part de sa taille pleine actuelle et rétrécit vers `tileRect`.
 // Les styles sont nettoyés avant de résoudre la promesse, pour que l'écran suivant (l'accueil,
 // rendu juste après) ne hérite pas d'un transform/opacity resté collé sur #screen.
-export function shrinkToRect(el, tileRect, { duration = 360 } = {}) {
+export function shrinkToRect(el, tileRect, { duration = SHRINK_MS, opacityDuration = SHRINK_OPACITY_MS, ease = SHRINK_EASE } = {}) {
   return new Promise((resolve) => {
     const startRect = el.getBoundingClientRect();
     el.style.transformOrigin = 'center center';
-    el.style.transition = `transform ${duration}ms var(--ease-in-out), opacity ${duration}ms linear`;
+    el.style.transition = `transform ${duration}ms ${ease}, opacity ${opacityDuration}ms ${ease}`;
     el.style.transform = flipTransform(tileRect, startRect);
     el.style.opacity = '0';
     setTimeout(() => {
