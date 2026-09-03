@@ -16,6 +16,7 @@ import {
   onCardPress, throwCardOut, enterCard, advanceStack, spawnShards,
 } from './card.js';
 import { icon } from './icons.js';
+import { noteOutcome, noteRelease, takeMoves, forgetMoves, playHomeMoves } from './moves.js';
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
@@ -179,42 +180,103 @@ function playDailyGoalBurst(header, badge) {
   }, 350);
 }
 
-export async function renderHome(container, { onStartHard, onStartLearning, onStartReview, onStartFailedWords, celebrate = false }) {
-  container.innerHTML = '<div class="loading-block"><span class="ds-spinner"></span><div class="loading-msg">Chargement de la session</div></div>';
-  const today = todayISO();
-  const session = await startSession();
-  const failedWords = getFailedWordsPool();
-  const streak = getStreak();
-  const learnedCount = getLearnedCount();
-  const inProgressCount = getInProgressCount();
-  const learnedToday = getLearnedToday(today);
-  const startedToday = getStartedToday(today);
-  const dailyBudget = parseInt(getSetting('new_items_per_day') ?? '10', 10);
-  const introducedToday = countNewIntroducedToday(today);
-  const newRemaining = session.newItems.length;
-  const newPct = dailyBudget > 0 ? Math.min(100, Math.round((introducedToday / dailyBudget) * 100)) : 0;
+// Les quatre tuiles, décrites une seule fois : leur markup dépend entièrement des chiffres
+// qu'on leur passe, si bien que le même descripteur sert à rendre l'accueil d'aujourd'hui
+// comme à le rendre tel qu'il était avant la séance, le temps de l'animation des transferts.
+const HOME_TILES = {
+  new: {
+    node: 'start-learning-btn',
+    cls: (s) => `tile tile--new${s.newRemaining === 0 ? ' tile--done' : ''}`,
+    done: (s) => s.newRemaining === 0,
+    html: (s) => (s.newRemaining === 0 ? newTileDoneHtml(s) : newTileActiveHtml(s)),
+  },
+  review: {
+    node: 'start-review-btn',
+    cls: (s) => `tile tile--review${s.reviewRemaining === 0 ? ' tile--done' : ''}`,
+    done: (s) => s.reviewRemaining === 0,
+    html: (s) => (s.reviewRemaining === 0
+      ? reviewTileDoneHtml(s)
+      : reviewTileActiveHtml({ ...s, reviewTotal: s.reviewedToday + s.reviewRemaining })),
+  },
+  tricky: {
+    node: 'start-hard-btn',
+    cls: () => 'tile tile--flat tile--tricky',
+    done: (s) => s.hardCount === 0,
+    html: (s) => flatTileHtml({
+      count: s.hardCount, title: 'Mots<br>compliqués', glyphName: 'brain', glyphColor: 'var(--violet-100)',
+      doneTitle: 'Compliqués', doneStatus: 'À jour',
+    }),
+  },
+  failed: {
+    node: 'start-failed-btn',
+    cls: () => 'tile tile--flat tile--failed',
+    done: (s) => s.failedCount === 0,
+    html: (s) => flatTileHtml({
+      count: s.failedCount, title: 'Mots<br>ratés', glyphName: 'circle-x', glyphColor: 'var(--crimson-100)',
+      doneTitle: 'Ratés', doneStatus: 'Aucun',
+    }),
+  },
+};
+const TILE_ORDER = ['new', 'review', 'tricky', 'failed'];
 
-  const reviewRemaining = session.reviewItems.length;
-  // Le dénominateur est ce qui a réellement été noté aujourd'hui plus ce qu'il reste :
-  // jamais un total inventé.
-  const reviewedToday = countReviewedToday(today);
-  const reviewTotal = reviewedToday + reviewRemaining;
-  const reviewPct = reviewTotal > 0 ? Math.round((reviewedToday / reviewTotal) * 100) : 0;
+// Sections de l'accueil vues par l'animation des déplacements : les quatre tuiles plus les
+// deux pastilles du haut. Chacune expose sa boîte (à contracter/gonfler), le nœud qui porte
+// son chiffre — différent selon que la tuile est active ou bouclée, absent quand elle est à
+// jour — et le champ de l'instantané qui la chiffre.
+const SECTION_BOX = {
+  new: '#start-learning-btn', review: '#start-review-btn',
+  tricky: '#start-hard-btn', failed: '#start-failed-btn',
+  learned: '#stat-learned', inprogress: '#stat-inprogress',
+};
+const SECTION_COUNT = {
+  new: '.tile-ring-n, .tile-disc__n', review: '.tile-count b, .tile-disc__n',
+  tricky: '.tile-count', failed: '.tile-count',
+  learned: '.stat-pill__n', inprogress: '.stat-pill__n',
+};
+const SECTION_FIELD = {
+  new: 'introducedToday', review: 'reviewRemaining',
+  tricky: 'hardCount', failed: 'failedCount',
+  learned: 'learnedCount', inprogress: 'inProgressCount',
+};
 
-  // La journée n'est « complète » que si les deux files sont vides — jamais entre les deux,
-  // et jamais gardé en mémoire d'une visite à l'autre : recalculé à chaque rendu de l'accueil.
-  const dayComplete = newRemaining === 0 && reviewRemaining === 0;
-  // L'éclat ne joue qu'à l'instant précis où la journée bascule en complète (retour de la
-  // séance qui vient de vider la dernière file) — jamais sur une simple revisite de l'accueil
-  // un jour déjà bouclé, où l'état vert s'affiche directement, sans transition.
-  const burst = celebrate && dayComplete;
-  const now = new Date();
+function newPctOf(s) {
+  return s.dailyBudget > 0 ? Math.min(100, Math.round((s.introducedToday / s.dailyBudget) * 100)) : 0;
+}
+function reviewPctOf(s) {
+  const total = s.reviewedToday + s.reviewRemaining;
+  return total > 0 ? Math.round((s.reviewedToday / total) * 100) : 0;
+}
 
-  const streakHtml = `
-    <span class="ds-streak${burst ? ' ds-streak--burst' : ''}">${icon('flame', { size: 17, color: '#2B1F00', stroke: 2.4 })}<span class="ds-streak__n">${streak}</span><span class="ds-streak__u">j</span>${burst ? '<span class="eclat-host" id="streak-shards"></span>' : ''}</span>
+function statRowHtml(s) {
+  return `
+    ${statPillHtml({
+      id: 'stat-learned', variant: 'home', side: 'left', value: s.learnedCount,
+      delta: s.learnedToday > 0 ? `+${s.learnedToday}` : null,
+      deltaColor: 'var(--green-100)', label: 'Mots appris',
+      glyph: icon('trophy', { size: 17, color: 'var(--green-100)', stroke: 2.2 }),
+    })}
+    ${statPillHtml({
+      id: 'stat-inprogress', variant: 'home', side: 'right', value: s.inProgressCount,
+      delta: s.startedToday > 0 ? `+${s.startedToday}` : null,
+      deltaColor: 'var(--copper-100)', label: 'Mots en cours',
+      glyph: icon('sprout', { size: 17, color: 'var(--copper-100)', stroke: 2.2 }),
+    })}
   `;
+}
 
-  const headerInner = dayComplete ? `
+function homeGridHtml(s) {
+  return TILE_ORDER.map((id) => {
+    const t = HOME_TILES[id];
+    return `<button class="${t.cls(s)}" id="${t.node}" type="button"${t.done(s) ? ' disabled' : ''}>${t.html(s)}</button>`;
+  }).join('');
+}
+
+function homeHeaderInner(s, now) {
+  const streakHtml = `
+    <span class="ds-streak${s.burst ? ' ds-streak--burst' : ''}">${icon('flame', { size: 17, color: '#2B1F00', stroke: 2.4 })}<span class="ds-streak__n">${s.streak}</span><span class="ds-streak__u">j</span>${s.burst ? '<span class="eclat-host" id="streak-shards"></span>' : ''}</span>
+  `;
+  const dayComplete = s.newRemaining === 0 && s.reviewRemaining === 0;
+  return dayComplete ? `
     <div class="home-header__row">
       <div class="home-header__dates">
         <span class="home-header__eyebrow">${icon('check', { size: 13, color: '#FAF7EF', stroke: 3.2 })}<span>Journée complète</span></span>
@@ -232,92 +294,206 @@ export async function renderHome(container, { onStartHard, onStartLearning, onSt
       ${streakHtml}
     </div>
   `;
+}
 
-  // En temps normal, la classe --complete est posée dès le rendu. En éclat, elle est retenue
-  // (le bandeau reste sur --stone-500) jusqu'à ce que playDailyGoalBurst l'ajoute au bon
-  // instant — c'est elle qui fait basculer la couleur, pas ce rendu initial.
-  const headerClass = burst ? 'home-header--burst' : dayComplete ? 'home-header--complete' : '';
+// Instantané des chiffres du dernier rendu de l'accueil : c'est le point de départ de
+// l'animation des déplacements au retour de séance. En mémoire vive comme le journal de
+// moves.js — sans lui (première ouverture, rechargement), l'accueil s'affiche directement à
+// ses valeurs du moment, sans rien rejouer.
+let lastHomeStats = null;
+
+export async function renderHome(container, { onStartHard, onStartLearning, onStartReview, onStartFailedWords, celebrate = false }) {
+  container.innerHTML = '<div class="loading-block"><span class="ds-spinner"></span><div class="loading-msg">Chargement de la session</div></div>';
+  const today = todayISO();
+  const session = await startSession();
+  const failedWords = getFailedWordsPool();
+  const now = new Date();
+
+  // Le dénominateur de la révision est ce qui a réellement été noté aujourd'hui plus ce qu'il
+  // reste : jamais un total inventé.
+  const stats = {
+    streak: getStreak(),
+    learnedCount: getLearnedCount(),
+    inProgressCount: getInProgressCount(),
+    learnedToday: getLearnedToday(today),
+    startedToday: getStartedToday(today),
+    dailyBudget: parseInt(getSetting('new_items_per_day') ?? '10', 10),
+    introducedToday: countNewIntroducedToday(today),
+    newRemaining: session.newItems.length,
+    reviewRemaining: session.reviewItems.length,
+    reviewedToday: countReviewedToday(today),
+    hardCount: session.hardItems.length,
+    failedCount: failedWords.length,
+    burst: false,
+  };
+
+  // La journée n'est « complète » que si les deux files sont vides — jamais entre les deux,
+  // et jamais gardé en mémoire d'une visite à l'autre : recalculé à chaque rendu de l'accueil.
+  // L'éclat ne joue qu'à l'instant précis où elle bascule en complète (retour de la séance qui
+  // vient de vider la dernière file) — jamais sur une simple revisite d'un jour déjà bouclé.
+  stats.burst = celebrate && stats.newRemaining === 0 && stats.reviewRemaining === 0;
+
+  // Déplacements de mots à rejouer : ceux notés depuis le dernier passage ici, quel que soit
+  // le chemin de retour (bilan, croix d'abandon, onglet du bas). Sans instantané d'avant, ou
+  // en mouvement réduit, on ne rejoue rien et l'accueil s'ouvre déjà à jour.
+  const prev = lastHomeStats;
+  const moves = takeMoves();
+  const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  const animating = !!prev && moves.length > 0 && !reduced;
+  if (!animating) forgetMoves();
+  // Pendant l'animation, l'accueil s'ouvre sur les chiffres d'avant la séance ; `shown` suit
+  // ce qui est réellement affiché à l'écran et rejoint `stats` au fil des arrivées.
+  const shown = animating ? { ...prev, streak: stats.streak, burst: false } : { ...stats };
+  lastHomeStats = { ...stats, burst: false };
 
   container.innerHTML = `
-    <div class="home-header${headerClass ? ` ${headerClass}` : ''}" id="home-header">${headerInner}${burst ? '<span class="home-header__flash"></span><span class="eclat-host" id="header-shards"></span>' : ''}</div>
-
+    <div class="home-header" id="home-header"></div>
     <div class="screen-scroll">
-      <div class="stat-row">
-        ${statPillHtml({
-          variant: 'home', side: 'left', value: learnedCount, delta: learnedToday > 0 ? `+${learnedToday}` : null,
-          deltaColor: 'var(--green-100)', label: 'Mots appris',
-          glyph: icon('trophy', { size: 17, color: 'var(--green-100)', stroke: 2.2 }),
-        })}
-        ${statPillHtml({
-          variant: 'home', side: 'right', value: inProgressCount, delta: startedToday > 0 ? `+${startedToday}` : null,
-          deltaColor: 'var(--copper-100)', label: 'Mots en cours',
-          glyph: icon('sprout', { size: 17, color: 'var(--copper-100)', stroke: 2.2 }),
-        })}
-      </div>
-
-      <div class="home-grid">
-        <button class="tile tile--new${newRemaining === 0 ? ' tile--done' : ''}" id="start-learning-btn" type="button" ${newRemaining === 0 ? 'disabled' : ''}>
-          ${newRemaining === 0 ? newTileDoneHtml({ introducedToday }) : newTileActiveHtml({ introducedToday, dailyBudget, newRemaining })}
-        </button>
-
-        <button class="tile tile--review${reviewRemaining === 0 ? ' tile--done' : ''}" id="start-review-btn" type="button" ${reviewRemaining === 0 ? 'disabled' : ''}>
-          ${reviewRemaining === 0 ? reviewTileDoneHtml({ reviewedToday }) : reviewTileActiveHtml({ reviewRemaining, reviewedToday, reviewTotal })}
-        </button>
-
-        <button class="tile tile--flat tile--tricky" id="start-hard-btn" type="button" ${session.hardItems.length === 0 ? 'disabled' : ''}>
-          ${flatTileHtml({
-            count: session.hardItems.length, title: 'Mots<br>compliqués', glyphName: 'brain', glyphColor: 'var(--violet-100)',
-            doneTitle: 'Compliqués', doneStatus: 'À jour',
-          })}
-        </button>
-
-        <button class="tile tile--flat tile--failed" id="start-failed-btn" type="button" ${failedWords.length === 0 ? 'disabled' : ''}>
-          ${flatTileHtml({
-            count: failedWords.length, title: 'Mots<br>ratés', glyphName: 'circle-x', glyphColor: 'var(--crimson-100)',
-            doneTitle: 'Ratés', doneStatus: 'Aucun',
-          })}
-        </button>
-      </div>
+      <div class="stat-row" id="stat-row"></div>
+      <div class="home-grid" id="home-grid"></div>
     </div>
   `;
 
-  // L'anneau et la barre partent de zéro puis se remplissent : le mouvement dit la part
-  // déjà faite, il ne décore pas. requestAnimationFrame ne se déclenche pas sur une page
-  // masquée — le minuteur reprend la main pour que la valeur finisse toujours par être la
-  // bonne, animée ou non. Absents une fois la tuile bouclée (plus d'anneau ni de barre).
-  let painted = false;
-  const paintProgress = () => {
-    if (painted) return;
-    painted = true;
-    container.querySelector('#new-ring')?.style.setProperty('--pct', String(newPct));
-    const fill = container.querySelector('#review-fill');
-    if (fill) fill.style.width = `${reviewPct}%`;
+  const paintHeader = (s) => {
+    const header = container.querySelector('#home-header');
+    const dayComplete = s.newRemaining === 0 && s.reviewRemaining === 0;
+    // En temps normal, la classe --complete est posée dès le rendu. En éclat, elle est retenue
+    // (le bandeau reste sur --stone-500) jusqu'à ce que playDailyGoalBurst l'ajoute au bon
+    // instant — c'est elle qui fait basculer la couleur, pas ce rendu.
+    header.className = `home-header${s.burst ? ' home-header--burst' : dayComplete ? ' home-header--complete' : ''}`;
+    header.innerHTML = homeHeaderInner(s, now)
+      + (s.burst ? '<span class="home-header__flash"></span><span class="eclat-host" id="header-shards"></span>' : '');
   };
-  requestAnimationFrame(paintProgress);
-  setTimeout(paintProgress, 250);
 
-  if (burst) {
-    playDailyGoalBurst(container.querySelector('#home-header'), container.querySelector('.ds-streak'));
-  }
+  const paintTile = (id, s, { swap = false } = {}) => {
+    const t = HOME_TILES[id];
+    const el = container.querySelector(`#${t.node}`);
+    if (!el) return;
+    el.className = t.cls(s);
+    el.disabled = t.done(s);
+    el.innerHTML = t.html(s);
+    if (swap) {
+      el.classList.add('mv-swap-in');
+      setTimeout(() => el.classList.remove('mv-swap-in'), 300);
+    }
+  };
+
+  // L'anneau et la barre partent de zéro puis se remplissent : le mouvement dit la part déjà
+  // faite, il ne décore pas. requestAnimationFrame ne se déclenche pas sur une page masquée —
+  // le minuteur reprend la main pour que la valeur finisse toujours par être la bonne, animée
+  // ou non. Absents une fois la tuile bouclée (plus d'anneau ni de barre).
+  // `instant` : à la fin de la chorégraphie, l'anneau et la barre sont déjà à leur valeur —
+  // les reposer avec leur transition les ferait repartir de zéro une seconde fois.
+  const paintProgress = (s, instant = false) => {
+    const ring = container.querySelector('#new-ring');
+    const fill = container.querySelector('#review-fill');
+    if (instant) {
+      if (ring) ring.style.transition = 'none';
+      if (fill) fill.style.transition = 'none';
+    }
+    ring?.style.setProperty('--pct', String(newPctOf(s)));
+    if (fill) fill.style.width = `${reviewPctOf(s)}%`;
+    if (instant) {
+      void (ring ?? fill ?? container).offsetWidth;
+      if (ring) ring.style.transition = '';
+      if (fill) fill.style.transition = '';
+    }
+  };
+
+  const paintBoard = (s, { instant = false } = {}) => {
+    container.querySelector('#stat-row').innerHTML = statRowHtml(s);
+    container.querySelector('#home-grid').innerHTML = homeGridHtml(s);
+    if (instant) { paintProgress(s, true); return; }
+    let painted = false;
+    const once = () => { if (!painted) { painted = true; paintProgress(s); } };
+    requestAnimationFrame(once);
+    setTimeout(once, 250);
+  };
 
   // La tuile touchée devient l'écran de session (voir growFromRect dans main.js) : son
-  // rectangle est capturé ici, au moment du tap, avant qu'elle ne disparaisse du DOM.
-  if (session.hardItems.length > 0) {
-    const tile = container.querySelector('#start-hard-btn');
-    tile.addEventListener('click', () => onStartHard(session, tile.getBoundingClientRect()));
+  // rectangle est capturé au moment du tap, avant qu'elle ne disparaisse du DOM. Posés
+  // seulement une fois l'accueil à son état final — pendant l'animation, il montre encore
+  // des chiffres d'avant, sur lesquels on ne veut pas pouvoir lancer une séance.
+  const attachTileHandlers = () => {
+    const bind = (node, fn) => {
+      const tile = container.querySelector(`#${node}`);
+      if (tile && !tile.disabled) tile.addEventListener('click', () => fn(tile.getBoundingClientRect()));
+    };
+    bind('start-hard-btn', (rect) => onStartHard(session, rect));
+    bind('start-learning-btn', (rect) => onStartLearning(session, rect));
+    bind('start-review-btn', (rect) => onStartReview(session, rect));
+    bind('start-failed-btn', (rect) => onStartFailedWords(failedWords, rect));
+  };
+
+  paintHeader(shown);
+  paintBoard(shown);
+
+  if (!animating) {
+    if (stats.burst) playDailyGoalBurst(container.querySelector('#home-header'), container.querySelector('.ds-streak'));
+    attachTileHandlers();
+    return;
   }
-  if (newRemaining > 0) {
-    const tile = container.querySelector('#start-learning-btn');
-    tile.addEventListener('click', () => onStartLearning(session, tile.getBoundingClientRect()));
-  }
-  if (reviewRemaining > 0) {
-    const tile = container.querySelector('#start-review-btn');
-    tile.addEventListener('click', () => onStartReview(session, tile.getBoundingClientRect()));
-  }
-  if (failedWords.length > 0) {
-    const tile = container.querySelector('#start-failed-btn');
-    tile.addEventListener('click', () => onStartFailedWords(failedWords, tile.getBoundingClientRect()));
-  }
+
+  const countEl = (id) => container.querySelector(SECTION_BOX[id])?.querySelector(SECTION_COUNT[id]) ?? null;
+  const fromPct = { new: newPctOf(shown), review: reviewPctOf(shown) };
+  const toPct = { new: newPctOf(stats), review: reviewPctOf(stats) };
+  const lerpPct = (id, p) => fromPct[id] + (toPct[id] - fromPct[id]) * p;
+
+  await playHomeMoves(moves, {
+    el: (id) => container.querySelector(SECTION_BOX[id]),
+    point: (id) => {
+      const box = container.querySelector(SECTION_BOX[id]);
+      if (!box) return null;
+      const rect = (countEl(id) ?? box).getBoundingClientRect();
+      if (!rect.width && !rect.height) return null;
+      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    },
+    values: Object.fromEntries(Object.entries(SECTION_FIELD)
+      .map(([id, field]) => [id, { from: shown[field], to: stats[field] }])),
+    setValue: (id, value, p) => {
+      shown[SECTION_FIELD[id]] = value;
+      // Compliqués / ratés : la tuile « à jour » se retourne en tuile chiffrée à l'instant de
+      // la première arrivée — le chiffre naît avec elle, plutôt que d'attendre à 0 sous une
+      // coche qui n'est déjà plus vraie.
+      if ((id === 'tricky' || id === 'failed') && value > 0 && !countEl(id)) paintTile(id, shown, { swap: true });
+      const el = countEl(id);
+      if (el) {
+        el.textContent = String(value);
+        el.classList.remove('mv-count');
+        void el.offsetWidth;
+        el.classList.add('mv-count');
+      }
+      if (id === 'new') container.querySelector('#new-ring')?.style.setProperty('--pct', String(Math.round(lerpPct('new', p))));
+      if (id === 'review') {
+        const fill = container.querySelector('#review-fill');
+        if (fill) fill.style.width = `${lerpPct('review', p)}%`;
+      }
+    },
+    // Fin de la chorégraphie (ou tap qui l'abrège) : l'accueil est reposé en entier à son état
+    // réel. Les tuiles qui changent d'état (bouclée <-> active) sont les seules à bouger
+    // visiblement ici, les chiffres ayant déjà rejoint leur valeur finale.
+    finalize: () => {
+      // Comparé à ce qui est réellement rendu, pas aux chiffres suivis : une tuile dont le
+      // compte est déjà tombé à zéro pendant les vols porte encore son visage actif, et c'est
+      // bien elle qui doit se retourner ici.
+      const swaps = TILE_ORDER.filter((id) => {
+        const el = container.querySelector(`#${HOME_TILES[id].node}`);
+        return !!el && el.disabled !== HOME_TILES[id].done(stats);
+      });
+      paintHeader(stats);
+      paintBoard(stats, { instant: true });
+      swaps.forEach((id) => {
+        const el = container.querySelector(`#${HOME_TILES[id].node}`);
+        el?.classList.add('mv-swap-in');
+        setTimeout(() => el?.classList.remove('mv-swap-in'), 300);
+      });
+    },
+  });
+
+  // L'éclat de la journée complète couronne la séquence : il ne part qu'une fois tous les
+  // mots arrivés à destination.
+  if (stats.burst) playDailyGoalBurst(container.querySelector('#home-header'), container.querySelector('.ds-streak'));
+  attachTileHandlers();
 }
 
 // --- Coque de session ------------------------------------------------------
@@ -395,6 +571,9 @@ function recordOutcome(tally, before, after, firstCorrect) {
   // part en mode compliqué de ce qui redescend juste d'un niveau.
   if (after && after.learning_process === 'hard' && (!before || before.learning_process !== 'hard')) tally.enteredHard += 1;
   if (after && after.next_review_date) tally.nextDates.push(after.next_review_date);
+  // Même comparaison, mais du point de vue des sections de l'accueil : ce que ce mot vient de
+  // quitter et ce qu'il vient de rejoindre. Consommé au retour à l'accueil (voir moves.js).
+  noteOutcome(tally.kind, before, after);
 }
 
 // --- Écrans de carte -------------------------------------------------------
@@ -534,10 +713,9 @@ function morphCard(area, {
       submitLabelA.textContent = isCorrect ? 'Suivant' : 'Réessayer';
       if (rcontext && !isCorrect) rcontext.style.display = '';
 
-      // Un seul basculement d'état porte tout le dépli : chaque partie (teinte du champ, bande
-      // qui monte, mot qui descend, chrome du verdict, encadrés usage/exemple) a son propre
-      // délai/durée en CSS (voir le commentaire de bloc « carte à fusion » dans style.css) —
-      // rien n'attend ici entre des étapes, le CSS choréographie tout le décalage d'un coup.
+      // Un seul basculement d'état porte tout le dépli, en trois temps (voir le commentaire de
+      // bloc « carte à fusion » dans style.css) : teinte immédiate, forme (90-260ms), contenu
+      // (240-430ms) — rien n'attend ici entre les étapes, le CSS choréographie tout le décalage.
       root.classList.add(
         'ds-morph--committed', isCorrect ? 'ds-morph--correct' : 'ds-morph--wrong',
         'ds-morph--tinted', 'ds-morph--morphed', 'ds-morph--unfolded',
@@ -546,9 +724,10 @@ function morphCard(area, {
       answered = true;
       foot.classList.add('session-foot--answered');
 
-      // La conséquence Leitner n'apparaît qu'une fois le dépli installé, pas dès la réponse.
+      // La conséquence Leitner n'apparaît qu'une fois le dépli installé (430ms), pas dès la
+      // réponse — 450ms laisse un souffle court après la fin de l'étape « contenu ».
       if (consequence) {
-        await wait(700);
+        await wait(450);
         const consequenceHtmlBlock = typeof consequence === 'string'
           ? `<div class="ds-alert ds-alert--success">${escapeHtml(consequence)}</div>`
           : consequenceHtml(consequence);
@@ -843,6 +1022,9 @@ async function runHardModeRound(container, item, targetPhase, tally) {
           await gradeHardAttempt(item, 3, true);
           tally.exitedHard += 1;
           tally.phasesCleared += 1;
+          // Le mot quitte les compliqués sans rejoindre aucune section aujourd'hui : à
+          // l'accueil, sa particule s'élèvera et éclatera au lieu d'atterrir quelque part.
+          noteRelease('tricky');
           outcome = { done: true };
           return 'Sorti du mode compliqué : le mot revient demain en découverte';
         }

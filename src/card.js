@@ -267,13 +267,13 @@ export function consequenceHtml({ wrongAnswer, before, after }) {
 // Pile à trois couches (deux liserés décalés en arrière-plan, le corps ink-500 au premier
 // plan) : même mécanique visuelle pour la ligne de stats de l'accueil (icône + libellé sous
 // le nombre) et le total du bilan (libellé à droite, sans icône).
-export function statPillHtml({ variant = 'home', side = 'left', value, delta, deltaColor, label, glyph = '' }) {
+export function statPillHtml({ id = null, variant = 'home', side = 'left', value, delta, deltaColor, label, glyph = '' }) {
   const peekClass = side === 'right' ? 'stat-pill--right' : 'stat-pill--left';
   const deltaHtml = delta != null ? `<span class="stat-pill__delta" style="color:${deltaColor}">${escapeHtml(delta)}</span>` : '';
   const nums = `<div class="stat-pill__nums"><span class="stat-pill__n">${escapeHtml(value)}</span>${deltaHtml}</div>`;
   const body = `<div class="stat-pill__row">${nums}<span class="stat-pill__glyph">${glyph}</span></div><span class="stat-pill__label">${escapeHtml(label)}</span>`;
   return `
-    <div class="stat-pill stat-pill--${variant} ${peekClass}">
+    <div class="stat-pill stat-pill--${variant} ${peekClass}"${id ? ` id="${id}"` : ''}>
       <div class="stat-pill__peek stat-pill__peek--1"></div>
       <div class="stat-pill__peek stat-pill__peek--2"></div>
       <div class="stat-pill__body">${body}</div>

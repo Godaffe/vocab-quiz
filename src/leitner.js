@@ -338,8 +338,15 @@ export function getInProgressCount() {
 // Words already attempted at least once and currently sitting at level 0 in the normal
 // circuit — excludes never-seen items (total_reviews = 0) and "mots compliqués" items
 // (learning_process = 'hard'), which have their own dedicated track.
+// `last_result = 'incorrect'` : un mot n'est « raté » que si sa dernière réponse était fausse.
+// Sans cette condition, un mot qui vient de SORTIR du mode compliqué (exitHardMode le repose
+// à box_level 0 dans le circuit normal, avec un requeue_date à venir) retomberait le jour même
+// dans les mots ratés, alors qu'il vient d'être sauvé et qu'on lui annonce un retour en
+// découverte — la seule ligne que ce filtre écarte.
 export function getFailedWordsPool() {
-  return all(unionAll("learning_process = 'normal' AND box_level = 0 AND total_reviews > 0 AND is_learned = 0"));
+  return all(unionAll(
+    "learning_process = 'normal' AND box_level = 0 AND total_reviews > 0 AND is_learned = 0 AND last_result = 'incorrect'"
+  ));
 }
 
 export async function buildDailySession(newItemsPerDay, todayISO) {
