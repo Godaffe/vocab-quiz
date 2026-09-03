@@ -174,7 +174,7 @@ button { font-family: inherit; }
 /* Bouton Valider/Suivant de la carte à fusion : jamais remplacé, ses deux libellés se
    croisent en fondu (jamais les deux lisibles à la fois) — voir la carte à fusion plus bas. */
 #submit-btn { position: relative; }
-.ds-btn__label { transition: opacity 200ms linear 620ms; }
+.ds-btn__label { transition: opacity 190ms linear 240ms; }
 .ds-btn__label--a { position: absolute; opacity: 0; }
 .session-foot--answered .ds-btn__label--q { opacity: 0; }
 .session-foot--answered .ds-btn__label--a { opacity: 1; }
@@ -373,6 +373,41 @@ input[type="text"]:focus, input[type="number"]:focus {
   .home-header__flash, .home-header__flash--on { transition-duration: 1ms; opacity: 0 !important; }
   .eclat > i { display: none; }
 }
+
+/* ---------- déplacements de mots d'une section de l'accueil à l'autre ---------- */
+/* Au retour d'une séance, chaque mot qui a changé de catégorie traverse l'écran sous la forme
+   d'une mini-carte de la couleur de sa section d'arrivée : la section de départ se contracte
+   au décollage, celle d'arrivée gonfle et son chiffre monte d'un cran à l'atterrissage. Les
+   mots libérés (sortis des compliqués, récupérés des ratés) n'atterrissent nulle part : ils
+   s'élèvent en doré et éclatent en couronne. La couche est posée par-dessus tout l'écran, le
+   temps de la séquence seulement, et capte le tap qui l'abrège — voir playHomeMoves (moves.js).
+   Le bloc `prefers-reduced-motion` global en fin de fichier neutralise ces animations ; la
+   chorégraphie elle-même n'est alors même pas lancée (renderHome). */
+.mv-layer { position: fixed; inset: 0; z-index: 60; overflow: hidden; }
+
+.mv-card {
+  position: absolute; left: 0; top: 0;
+  width: 22px; height: 15px;
+  margin: -7.5px 0 0 -11px;
+  border-radius: 5px;
+  opacity: 0;
+  box-shadow: 0 3px 9px -3px rgba(33, 31, 20, .45), inset 0 -1px 0 rgba(33, 31, 20, .18);
+  will-change: transform, opacity;
+}
+
+/* Boîte de référence de l'éclat de libération, posée au point d'arrêt de la particule : les
+   positions en % de RELEASE_SHARDS s'y rapportent (voir radial() dans card.js). */
+.mv-burst { inset: auto; width: 34px; height: 34px; }
+
+.mv-shrink { animation: mv-shrink 200ms var(--ease-out); }
+.mv-swell { animation: mv-swell 200ms var(--ease-spring); }
+.mv-count { display: inline-block; animation: mv-count 220ms var(--ease-spring); }
+.mv-swap-in { animation: mv-swap-in 280ms var(--ease-out); }
+
+@keyframes mv-shrink { 45% { transform: scale(.97); } }
+@keyframes mv-swell { 45% { transform: scale(1.03); } }
+@keyframes mv-count { 40% { transform: scale(1.22); } }
+@keyframes mv-swap-in { from { opacity: 0; transform: scale(.94); } }
 
 .home-header__row { position: relative; display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
 .home-header__dates { display: flex; flex-direction: column; gap: 7px; }
@@ -925,10 +960,16 @@ input[type="text"]:focus, input[type="number"]:focus {
 .ds-result__blocklabel { font: 600 12px/1.25 var(--font-ui); text-transform: uppercase; letter-spacing: .09em; color: var(--text-muted); margin-bottom: 4px; }
 
 /* ---------- carte à fusion : question devient résultat ---------- */
-/* Un seul élément traverse tout : rien n'est remplacé. Le champ se colore et perd son cadre,
-   son texte devient la réponse tapée, le libellé devient le verdict, et la teinte naît dans
-   le champ pour se répandre sur tout l'en-tête. commit (200ms) → trait si faux (240ms) →
-   morphose (360ms) → dépli de la traduction/l'exemple (340ms). */
+/* Un seul élément traverse tout : rien n'est remplacé. Trois temps, pas plus (simplifié à la
+   demande — l'ancienne version égrenait neuf paliers de 60 à 660ms, trop longue et confuse) :
+   0. Immédiat, sans délai — la teinte du verdict (vert/cramoisi) envahit le champ et l'en-tête
+      d'un coup, le texte tapé apparaît ; sur une réponse fausse le champ secoue en plus
+      (@keyframes ds-shake) pour se distinguer d'une réussite au premier coup d'œil.
+   1. « Forme » (délai 90ms, durée 170ms, ecran plein à 260ms) — le champ se replie en bande, le
+      mot posé disparaît, l'en-tête se resserre.
+   2. « Contenu » (délai 240ms, durée 190ms, plein à 430ms) — tout ce qui reste (badge de
+      verdict, pastille nature/registre, traduction/sens/usage/exemple, solution si fausse)
+      apparaît en un seul mouvement, sans étagement entre ces blocs. */
 .ds-morph {
   position: relative;
   background: var(--paper-high);
@@ -944,9 +985,15 @@ input[type="text"]:focus, input[type="number"]:focus {
 .ds-morph--retry:not(.ds-morph--tinted) { background: var(--gold-50); box-shadow: 0 0 0 1.5px var(--gold-400), var(--shadow-raised); border-top: 4px solid var(--gold-500); }
 .ds-morph--retry:not(.ds-morph--tinted) .ds-morph__label { color: #5A3B00; }
 
+@keyframes ds-shake {
+  20%, 60% { transform: translateX(-5px); }
+  40%, 80% { transform: translateX(5px); }
+  100% { transform: translateX(0); }
+}
+
 .ds-morph__band {
   height: 0; transform: scaleX(0); transform-origin: left center; background: var(--ink-200);
-  transition: height 200ms var(--ease-out), transform 360ms var(--ease-out), background-color 280ms linear;
+  transition: height 170ms var(--ease-out) 90ms, transform 170ms var(--ease-out) 90ms, background-color 120ms linear;
 }
 .ds-morph--tinted .ds-morph__band { height: 10px; transform: scaleX(1); }
 .ds-morph--correct .ds-morph__band { background: var(--green-500); }
@@ -955,7 +1002,7 @@ input[type="text"]:focus, input[type="number"]:focus {
 .ds-morph__head {
   position: relative; padding: var(--card-pad-lg);
   background: var(--paper-high); border-bottom: 1.5px solid transparent;
-  transition: padding 300ms var(--ease-out) 150ms, background-color 300ms linear 200ms, border-bottom-color 300ms linear 200ms;
+  transition: padding 170ms var(--ease-out) 90ms, background-color 120ms linear, border-bottom-color 120ms linear;
 }
 .ds-morph--tinted .ds-morph__head { padding: var(--space-5) var(--card-pad); }
 .ds-morph--tinted.ds-morph--correct .ds-morph__head { background: var(--green-500); border-bottom-color: var(--green-600); }
@@ -964,7 +1011,7 @@ input[type="text"]:focus, input[type="number"]:focus {
 .ds-morph__flood {
   position: absolute; inset: 0; opacity: 0; pointer-events: none;
   transform: scale(1, .22); transform-origin: center 80%;
-  transition: transform 350ms var(--ease-out) 150ms, opacity 200ms linear 150ms;
+  transition: transform 150ms var(--ease-out), opacity 120ms linear;
 }
 .ds-morph--tinted .ds-morph__flood { opacity: 1; transform: scale(1, 1); }
 .ds-morph--correct .ds-morph__flood { background: var(--green-500); }
@@ -972,17 +1019,17 @@ input[type="text"]:focus, input[type="number"]:focus {
 
 /* En pleine couleur, l'en-tête bascule d'une ligne icône+mot horizontale à une colonne
    centrée : petit badge de verdict, mot en toutes lettres, pastilles nature/registre, puis
-   réponse fautive s'il y a lieu — tout empile plutôt que s'aligne à gauche du disque. Le champ
-   se teinte d'abord (60ms), la bande de verdict monte ensuite (150-450ms), et le reste du
-   chrome (coche, libellé, pastilles) n'arrive qu'en dernier (500ms) — voir la choréographie
-   générale en tête du commentaire de bloc « carte à fusion » plus bas. */
-.ds-morph__row { position: relative; display: flex; align-items: flex-start; gap: 0; transition: gap 300ms var(--ease-out) 150ms; }
+   réponse fautive s'il y a lieu — tout empile plutôt que s'aligne à gauche du disque. La teinte
+   (champ + en-tête) est immédiate, la forme se replie ensuite (90-260ms), et le chrome restant
+   arrive en dernier (240-430ms) — voir la choréographie générale en tête du commentaire de
+   bloc « carte à fusion » plus haut. */
+.ds-morph__row { position: relative; display: flex; align-items: flex-start; gap: 0; transition: gap 170ms var(--ease-out) 90ms; }
 .ds-morph--tinted .ds-morph__row { gap: 10px; flex-direction: column; align-items: stretch; }
 
 .ds-morph__disc {
   width: 0; height: 0; flex: 0 0 0; overflow: hidden; opacity: 0; transform: scale(.5);
   border-radius: var(--radius-pill); display: grid; place-items: center; color: #fff;
-  transition: width 1ms 500ms, flex-basis 1ms 500ms, transform 220ms var(--ease-spring) 500ms, opacity 220ms linear 500ms;
+  transition: width 1ms 240ms, flex-basis 1ms 240ms, transform 190ms var(--ease-spring) 240ms, opacity 190ms linear 240ms;
 }
 .ds-morph--tinted .ds-morph__disc {
   width: 22px; height: 22px; flex-basis: 22px; opacity: 1; transform: scale(1); align-self: center;
@@ -996,15 +1043,15 @@ input[type="text"]:focus, input[type="number"]:focus {
    `order` la fait seulement glisser après le champ/la solution une fois morphée. */
 .ds-morph--morphed .ds-morph__posrows { order: 10; }
 .ds-morph--tinted .ds-morph__col { text-align: center; }
-.ds-morph__label { color: var(--text-faint); transition: color 220ms linear 500ms; }
+.ds-morph__label { color: var(--text-faint); transition: color 120ms linear; }
 .ds-morph--tinted .ds-morph__label { color: rgba(255, 255, 255, .85); }
 
-.ds-morph__wordrows { display: grid; grid-template-rows: 1fr; transition: grid-template-rows 360ms var(--ease-out); }
+.ds-morph__wordrows { display: grid; grid-template-rows: 1fr; transition: grid-template-rows 170ms var(--ease-out) 90ms; }
 .ds-morph--morphed .ds-morph__wordrows { grid-template-rows: 0fr; }
 .ds-morph__wordclip { overflow: hidden; }
 .ds-morph__word {
   text-align: center; padding-top: 12px; font-size: 42px; line-height: 1.05; letter-spacing: -.035em; opacity: 1;
-  transition: font-size 300ms var(--ease-out) 150ms, opacity 200ms linear 150ms;
+  transition: font-size 170ms var(--ease-out) 90ms, opacity 120ms linear 90ms;
 }
 .ds-morph--morphed .ds-morph__word { font-size: 24px; opacity: 0; }
 
@@ -1013,14 +1060,14 @@ input[type="text"]:focus, input[type="number"]:focus {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
   border: 2px solid var(--ink-800); border-radius: var(--radius-md);
   background: var(--paper-high); box-shadow: var(--inset-well); padding: 0 var(--space-4);
-  /* Le champ se teinte d'abord (60-210ms), puis seulement se replie en bande (150-450ms) —
-     jamais les deux à la fois, sinon la couleur et la forme changeraient d'un même geste au
-     lieu de se lire comme deux temps successifs. */
-  transition: margin-top 300ms var(--ease-out) 150ms, min-height 300ms var(--ease-out) 150ms, padding 300ms var(--ease-out) 150ms,
-              border-radius 300ms var(--ease-out) 150ms, border-color 150ms linear 60ms, background-color 150ms linear 60ms, box-shadow 220ms linear 150ms;
+  /* La teinte (couleur/ombre) est immédiate, sans délai ; la forme (marge, hauteur, coins) ne
+     se replie qu'ensuite, à l'étape « forme » — couleur et forme changent en deux temps
+     distincts, jamais d'un même geste. */
+  transition: margin-top 170ms var(--ease-out) 90ms, min-height 170ms var(--ease-out) 90ms, padding 170ms var(--ease-out) 90ms,
+              border-radius 170ms var(--ease-out) 90ms, border-color 120ms linear, background-color 120ms linear, box-shadow 120ms linear;
 }
 .ds-morph--committed.ds-morph--correct .ds-morph__field { border-color: var(--green-500); background: var(--green-50); }
-.ds-morph--committed.ds-morph--wrong .ds-morph__field { border-color: var(--crimson-500); background: var(--crimson-50); }
+.ds-morph--committed.ds-morph--wrong .ds-morph__field { border-color: var(--crimson-500); background: var(--crimson-50); animation: ds-shake 320ms ease-in-out; }
 .ds-morph--morphed .ds-morph__field { margin-top: 2px; min-height: 0; padding: 0; border-color: transparent; background: transparent; box-shadow: none; }
 /* En fin de dépli, le disque de champ (déjà répété par celui de l'en-tête) s'efface, et « ta
    réponse » (uniquement sur échec) se centre en colonne plutôt qu'en ligne avec lui. */
@@ -1043,18 +1090,18 @@ input[type="text"]:focus, input[type="number"]:focus {
 .ds-morph__field:focus-within { border-color: var(--copper-500); box-shadow: inset 0 2px 5px rgba(33, 31, 20, .14), 0 0 0 3px rgba(176, 74, 15, .45); }
 .ds-morph__typedwrap {
   position: relative; display: none; align-items: baseline;
-  transition: background-color 200ms linear 520ms, padding 200ms var(--ease-out) 520ms;
+  transition: background-color 190ms linear 240ms, padding 190ms var(--ease-out) 240ms;
 }
 .ds-morph--committed .ds-morph__field input { display: none; }
 .ds-morph--committed .ds-morph__typedwrap { display: inline-flex; }
 /* « Ta réponse » : étiquette posée au-dessus du mot fautif, dans un carton translucide sur
    le fond saturé du verdict — masquée hors de l'état final raté, où elle ne veut rien dire.
-   Arrive avec le reste du chrome tardif (520ms), pas avant. */
+   Arrive avec le reste du chrome de l'étape « contenu » (240ms), pas avant. */
 .ds-morph--unfolded.ds-morph--wrong .ds-morph__typedwrap {
   flex-direction: column; align-items: center; gap: 4px;
   background: rgba(33, 31, 20, .2); border-radius: 12px; padding: 8px 14px;
 }
-.ds-morph__triedlabel { display: none; opacity: 0; transition: opacity 200ms linear 520ms; }
+.ds-morph__triedlabel { display: none; opacity: 0; transition: opacity 190ms linear 240ms; }
 .ds-morph--unfolded.ds-morph--wrong .ds-morph__triedlabel {
   display: block; opacity: 1; font: 600 9.5px/1 var(--font-mono); letter-spacing: .14em; text-transform: uppercase;
   color: rgba(255, 255, 255, .7);
@@ -1062,7 +1109,7 @@ input[type="text"]:focus, input[type="number"]:focus {
 .ds-morph__typedinner { position: relative; display: inline-flex; align-items: baseline; }
 .ds-morph__typed {
   font: 600 18px/1.15 var(--font-display); letter-spacing: -.02em; color: var(--text-strong);
-  transition: font-size 300ms var(--ease-out) 150ms, color 150ms linear 60ms;
+  transition: font-size 170ms var(--ease-out) 90ms, color 120ms linear;
 }
 .ds-morph--tinted .ds-morph__typed { color: #fff; }
 .ds-morph--morphed.ds-morph--correct .ds-morph__typed { font-size: 44px; letter-spacing: -.035em; }
@@ -1071,53 +1118,52 @@ input[type="text"]:focus, input[type="number"]:focus {
 .ds-morph__strike {
   position: absolute; left: -2px; right: -2px; top: 54%; height: 2.5px; border-radius: 2px;
   background: rgba(255, 255, 255, .7); transform: scaleX(0); transform-origin: left center;
-  transition: transform 240ms var(--ease-out) 150ms;
+  transition: transform 120ms var(--ease-out);
 }
 .ds-morph--struck .ds-morph__strike { transform: scaleX(1); }
 
 .ds-morph__fdisc {
   width: 0; height: 0; flex: 0 0 0; overflow: hidden; opacity: 0; transform: scale(.4);
   border-radius: var(--radius-pill); display: grid; place-items: center; color: #fff;
-  transition: width 200ms var(--ease-out), flex-basis 200ms var(--ease-out), transform 300ms var(--ease-spring), opacity 160ms linear;
+  transition: width 150ms var(--ease-out), flex-basis 150ms var(--ease-out), transform 220ms var(--ease-spring), opacity 120ms linear;
 }
 .ds-morph--committed .ds-morph__fdisc { width: 30px; height: 30px; flex-basis: 30px; opacity: 1; transform: scale(1); }
 .ds-morph--correct .ds-morph__fdisc { background: var(--green-500); }
 .ds-morph--wrong .ds-morph__fdisc { background: var(--crimson-500); }
 
-/* Pastilles nature/registre et (sur échec) solution en toutes lettres : le chrome le plus
-   tardif de la choréographie, avec le disque/libellé de l'en-tête (500-520ms) — le conteneur
-   se déplie juste avant (350-450ms) pour ne pas rogner son contenu à l'arrivée. */
+/* Pastilles nature/registre et (sur échec) solution en toutes lettres : le chrome de l'étape
+   « contenu » (240-430ms), avec le badge de verdict de l'en-tête — le conteneur se déplie au
+   même instant pour ne pas rogner son contenu à l'arrivée. */
 .ds-morph__answerrows, .ds-morph__posrows {
-  display: grid; grid-template-rows: 0fr; transition: grid-template-rows 250ms var(--ease-out) 350ms;
+  display: grid; grid-template-rows: 0fr; transition: grid-template-rows 190ms var(--ease-out) 240ms;
 }
 .ds-morph--morphed.ds-morph--wrong .ds-morph__answerrows { grid-template-rows: 1fr; }
 .ds-morph--morphed .ds-morph__posrows { grid-template-rows: 1fr; }
 .ds-morph__answerclip, .ds-morph__posclip {
   overflow: hidden; opacity: 0; transform: translateY(8px);
-  transition: opacity 240ms linear, transform 300ms var(--ease-out);
+  transition: opacity 190ms linear 240ms, transform 190ms var(--ease-out) 240ms;
 }
-.ds-morph--morphed.ds-morph--wrong .ds-morph__answerclip { opacity: 1; transform: translateY(0); transition-delay: 520ms; }
+.ds-morph--morphed.ds-morph--wrong .ds-morph__answerclip { opacity: 1; transform: translateY(0); }
 .ds-morph--morphed .ds-morph__posclip {
-  opacity: 1; transform: translateY(0); transition: opacity 220ms linear 500ms, transform 300ms var(--ease-out) 500ms;
+  opacity: 1; transform: translateY(0);
   display: flex; gap: 6px; justify-content: center; flex-wrap: wrap;
 }
 /* Nature et registre passent en pastilles translucides sur le fond saturé du verdict — la
    même .ds-pos qu'ailleurs (fond teal clair) jurerait sur du vert ou du cramoisi plein. */
 .ds-morph--tinted .ds-pos { background: rgba(255, 255, 255, .2); color: #fff; box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, .45); }
 
-/* La ligne se déplie tôt (300ms) : le bloc traduction/sens la remplit tout de suite, usage et
-   exemple suivent chacun leur propre entrée décalée (voir plus haut, choréographie générale)
-   sans attendre que le conteneur grandisse — il est déjà à sa hauteur pleine à ce moment-là. */
-.ds-morph__blocksrows { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 250ms var(--ease-out) 60ms; }
+/* Le bloc traduction/sens/usage/exemple se déplie et apparaît d'un seul mouvement, à l'étape
+   « contenu » (240ms) — plus d'étagement entre ces blocs (avant : 320/600/660ms). */
+.ds-morph__blocksrows { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 190ms var(--ease-out) 240ms; }
 .ds-morph--unfolded .ds-morph__blocksrows { grid-template-rows: 1fr; }
 .ds-morph__blocksclip { overflow: hidden; }
 .ds-result__translation, .ds-result__usage, .ds-result__example {
   opacity: 0; transform: translateY(10px);
-  transition: opacity 240ms linear, transform 300ms var(--ease-out);
+  transition: opacity 190ms linear 240ms, transform 190ms var(--ease-out) 240ms;
 }
-.ds-morph--unfolded .ds-result__translation { opacity: 1; transform: none; transition-delay: 320ms; }
-.ds-morph--unfolded .ds-result__usage { opacity: 1; transform: none; transition-delay: 600ms; }
-.ds-morph--unfolded .ds-result__example { opacity: 1; transform: none; transition-delay: 660ms; }
+.ds-morph--unfolded .ds-result__translation,
+.ds-morph--unfolded .ds-result__usage,
+.ds-morph--unfolded .ds-result__example { opacity: 1; transform: none; }
 
 @media (prefers-reduced-motion: reduce) {
   .ds-morph, .ds-morph__band, .ds-morph__head, .ds-morph__flood, .ds-morph__row, .ds-morph__disc,
