@@ -33,6 +33,9 @@ const SYNONYM_GROUPS = [
   ['toward', 'towards'],
   ['autumn', 'fall'],
   ['movie', 'film'],
+  ['this', 'that'],
+  ['these', 'those'],
+  ['can not', 'cannot'],
 ];
 
 function canonicalizeSynonyms(normalized) {
@@ -98,11 +101,49 @@ function verbFormsEquivalent(a, b) {
   return false;
 }
 
+// Contractions anglaises développées AVANT normalizeAnswer, qui supprime les apostrophes
+// (sinon « it's » deviendrait « its », confondu avec le possessif). Une contraction ambiguë
+// donne plusieurs lectures : « he's » -> he is / he has, « I'd » -> I would / I had.
+// Le 's possessif (« driver's seat ») n'est développé qu'après les pronoms listés ici.
+const S_PRONOUNS = 'he|she|it|that|this|what|who|where|there|here|how|when|why';
+const CONTRACTIONS = [
+  [/\blet's\b/g, ['let us']],
+  [/\bwon't\b/g, ['will not']],
+  [/\bcan't\b/g, ['can not']],
+  [/\bshan't\b/g, ['shall not']],
+  [/n't\b/g, [' not']],
+  [/(?<=\w)'m\b/g, [' am']],
+  [/(?<=\w)'re\b/g, [' are']],
+  [/(?<=\w)'ve\b/g, [' have']],
+  [/(?<=\w)'ll\b/g, [' will']],
+  [/(?<=\w)'d\b/g, [' would', ' had']],
+  [new RegExp(`\\b(${S_PRONOUNS})'s\\b`, 'g'), ['$1 is', '$1 has']],
+];
+
+function expandContractions(text) {
+  // Apostrophe typographique (clavier iPhone) -> apostrophe droite.
+  const base = String(text ?? '').toLowerCase().replace(/[’‘`]/g, "'");
+  let readings = [base];
+  for (const [pattern, expansions] of CONTRACTIONS) {
+    readings = readings.flatMap((r) => {
+      if (!r.match(pattern)) return [r];
+      // Chaque lecture remplace toutes les occurrences de la même façon : suffisant pour
+      // des réponses courtes, et évite l'explosion combinatoire.
+      return expansions.map((e) => r.replace(pattern, e));
+    });
+  }
+  return readings;
+}
+
+function canonicalForms(text) {
+  return expandContractions(text).map((r) => canonicalizeSynonyms(stripLeadingFiller(normalizeAnswer(r))));
+}
+
 export function answersMatch(userInput, expected) {
-  const a = canonicalizeSynonyms(stripLeadingFiller(normalizeAnswer(userInput)));
-  const b = canonicalizeSynonyms(stripLeadingFiller(normalizeAnswer(expected)));
-  if (a.length === 0) return false;
-  return a === b || verbFormsEquivalent(a, b);
+  const formsA = canonicalForms(userInput);
+  const formsB = canonicalForms(expected);
+  if (formsA[0].length === 0) return false;
+  return formsA.some((a) => formsB.some((b) => a === b || verbFormsEquivalent(a, b)));
 }
 
 // Accepte la réponse si elle correspond à au moins une des traductions listées dans
