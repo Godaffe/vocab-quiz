@@ -64,13 +64,13 @@ export function cardStackHtml(remaining, innerHtml, { stretch = false } = {}) {
 }
 
 // --- carte découverte --------------------------------------------------------
-// Recto : le mot à apprendre, son type et son exemple. Verso : la traduction, et le
-// contexte s'il désambiguë cette traduction précise (jamais sur le recto : il annote le
-// mot français, pas le mot anglais qu'on introduit). Le mot est ancré au même niveau sur les
+// Recto : le mot à apprendre, son type, son registre et son exemple. Verso : la traduction,
+// le même type et registre, puis sens et usage. Le mot est ancré au même niveau sur les
 // deux faces (espaceur fixe en tête) ; les champs complémentaires (exemple au recto, sens/usage
 // au verso) sont épinglés en bas via un espaceur élastique — jamais centrés au milieu, qui
 // ferait flotter le mot à une hauteur différente selon ce que la carte a d'autre à montrer.
-export function flipCardHtml({ word, pos, example, translation, context, registre, sens, usage, foot }) {
+export function flipCardHtml({ word, pos, example, translation, registre, sens, usage, foot }) {
+  const tags = flipTagsHtml(pos, registre);
   return `
     <div class="ds-flip" id="flip-card">
       <div class="ds-flip__inner">
@@ -79,7 +79,7 @@ export function flipCardHtml({ word, pos, example, translation, context, registr
           <div class="ds-flip__head">
             <span class="ds-prompt">Nouveau mot</span>
             <div class="${wordSizeClass(word)}">${escapeHtml(word)}</div>
-            ${pos ? `<span class="ds-flip__pos">${escapeHtml(pos)}</span>` : ''}
+            ${tags}
           </div>
           ${example ? `
           <div class="ds-example--tab">
@@ -94,8 +94,7 @@ export function flipCardHtml({ word, pos, example, translation, context, registr
           <div class="ds-flip__head">
             <span class="ds-prompt">Traduction</span>
             <div class="${wordSizeClass(translation)}">${escapeHtml(translation)}</div>
-            ${context ? `<div class="ds-context">(${escapeHtml(context)})</div>` : ''}
-            ${registre ? `<span class="ds-flip__registre"><span class="ds-flip__registre-label">Registre&nbsp;·&nbsp;</span>${escapeHtml(registre)}</span>` : ''}
+            ${tags}
           </div>
           <div class="ds-flip__fill"></div>
           ${(sens || usage) ? `
@@ -108,6 +107,13 @@ export function flipCardHtml({ word, pos, example, translation, context, registr
       </div>
     </div>
   `;
+}
+
+// Type et registre qualifient le mot anglais : affichés à l'identique sur les deux faces,
+// pour qu'ils restent sous les yeux une fois la carte retournée.
+function flipTagsHtml(pos, registre) {
+  return `${pos ? `<span class="ds-flip__pos">${escapeHtml(pos)}</span>` : ''}
+            ${registre ? `<span class="ds-flip__registre"><span class="ds-flip__registre-label">Registre&nbsp;·&nbsp;</span>${escapeHtml(registre)}</span>` : ''}`;
 }
 
 // Taille du mot dégressive selon sa longueur : un mot ou une expression trop longue à 42px
@@ -159,7 +165,7 @@ export function answerFieldHtml({ placeholder = 'Ta réponse' } = {}) {
 // trait si faux, morphose, dépli). Cette fonction ne rend que le squelette initial (phase
 // « question ») ; runMorphCard (ci-dessous) pilote les classes d'état à la soumission.
 export function morphCardHtml({
-  instruction, question, badge = '', hint = '', context = '', resultContext = context, retry = false, retryLabel = 'Deuxième tentative',
+  instruction, question, badge = '', hint = '', retry = false, retryLabel = 'Deuxième tentative',
   answer = '', pos = '', translation = '', example = '', registre, sens, usage, sensHint = '',
 }) {
   return `
@@ -183,7 +189,6 @@ export function morphCardHtml({
               </div>
             </div>` : ''}
             ${hint ? `<div class="ds-qcard__hint">${hint}</div>` : ''}
-            ${context ? `<div class="ds-context" id="m-qcontext">(${escapeHtml(context)})</div>` : ''}
             ${sensHint ? `<div class="ds-morph__senshint">${escapeHtml(sensHint)}</div>` : ''}
             <div class="ds-morph__field" id="m-field">
               ${answerFieldHtml()}
@@ -207,7 +212,6 @@ export function morphCardHtml({
           ${translation ? `
           <div class="ds-result__translation" id="m-translation">
             <div class="ds-result__blockvalue">${escapeHtml(translation)}</div>
-            ${resultContext ? `<div class="ds-context" id="m-rcontext" style="display:none">(${escapeHtml(resultContext)})</div>` : ''}
             ${sens ? `<div class="ds-result__sens">${escapeHtml(sens)}</div>` : ''}
           </div>` : ''}
           ${usage ? `

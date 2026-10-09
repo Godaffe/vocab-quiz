@@ -28,7 +28,7 @@ const SHEETS = [
         type: row.Type ? String(row.Type).trim() : null,
         registre: row.Registre ? String(row.Registre).trim() : null,
         sens: row.Sens ? String(row.Sens).trim() : null,
-        usage: row.Utilisation ? String(row.Utilisation).trim() : null,
+        usage: row.Usage ? String(row.Usage).trim() : null,
       };
     },
   },
@@ -36,13 +36,12 @@ const SHEETS = [
     table: 'grammaire',
     candidates: ['Grammaire', 'Gammaire'],
     required: ['ID', 'Fr', 'En'],
-    fields: ['fr', 'en', 'explication', 'context'],
+    fields: ['fr', 'en', 'explication'],
     mapRow(row) {
       return {
         fr: String(row.Fr).trim(),
         en: String(row.En).trim(),
         explication: row.Explication ? String(row.Explication).trim() : null,
-        context: row.Contexte ? String(row.Contexte).trim() : null,
       };
     },
   },
@@ -50,13 +49,12 @@ const SHEETS = [
     table: 'expressions',
     candidates: ['Expressions'],
     required: ['ID', 'En', 'Meaning'],
-    fields: ['en', 'meaning', 'example', 'context'],
+    fields: ['en', 'meaning', 'example'],
     mapRow(row) {
       return {
         en: String(row.En).trim(),
         meaning: String(row.Meaning).trim(),
         example: row['Exemple en En'] ? String(row['Exemple en En']).trim() : null,
-        context: row.Contexte ? String(row.Contexte).trim() : null,
       };
     },
   },

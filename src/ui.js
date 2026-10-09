@@ -582,11 +582,11 @@ function recordOutcome(tally, before, after, firstCorrect) {
 // retourner (480 ms, la seule animation longue du système), glissement vers le haut pour
 // passer au suivant. Le bouton du bas reste le chemin fiable quand le geste n'est pas
 // disponible (souris, clavier).
-function discoverCard(area, { word, pos, example, translation, context, registre, sens, usage, remaining }) {
+function discoverCard(area, { word, pos, example, translation, registre, sens, usage, remaining }) {
   return new Promise((resolve) => {
     area.innerHTML = `
       <div class="session-body">
-        ${cardStackHtml(remaining, flipCardHtml({ word, pos, example, translation, context, registre, sens, usage, foot: 'Toucher ou glisser pour retourner' }))}
+        ${cardStackHtml(remaining, flipCardHtml({ word, pos, example, translation, registre, sens, usage, foot: 'Toucher ou glisser pour retourner' }))}
       </div>
       <div class="session-foot">
         <button type="button" class="ds-btn ds-btn--hero ds-btn--secondary" id="next-btn">Mot suivant</button>
@@ -646,15 +646,14 @@ function discoverCard(area, { word, pos, example, translation, context, registre
 // validation à la touche Entrée ou au bouton. Glisser la carte vers la droite (ou le bouton
 // « Passer ») abandonne la question sans la noter — le mot n'avance ni ne recule. `getConsequence`
 // (peut être async — elle est attendue) calcule la conséquence Leitner à partir de la réponse
-// et du verdict, une fois connus ; `resultContext` par défaut sur `context` sauf si l'appelant
-// veut des textes distincts entre l'annotation sous la question et sa reprise dans le résultat.
+// et du verdict, une fois connus.
 function morphCard(area, {
-  instruction, question, hint, badge, context, resultContext = context, retry = false, retryLabel, remaining = 0, checkFn,
+  instruction, question, hint, badge, retry = false, retryLabel, remaining = 0, checkFn,
   answer: expected, pos, translation, example, registre, sens, usage, sensHint, getConsequence,
 }) {
   return new Promise((resolve) => {
     const card = morphCardHtml({
-      instruction, question, badge, retry, retryLabel, hint: hint || '', context: context || '', resultContext: resultContext || '',
+      instruction, question, badge, retry, retryLabel, hint: hint || '',
       answer: expected, pos, translation, example, registre, sens, usage, sensHint: sensHint || '',
     });
     area.innerHTML = `
@@ -676,7 +675,6 @@ function morphCard(area, {
     const label = area.querySelector('#m-label');
     const disc = area.querySelector('#m-disc');
     const fdisc = area.querySelector('#m-fdisc');
-    const rcontext = area.querySelector('#m-rcontext');
     const submitBtn = area.querySelector('#submit-btn');
     const submitLabelA = area.querySelector('#submit-label-a');
     const skipBtn = area.querySelector('#skip-btn');
@@ -711,7 +709,6 @@ function morphCard(area, {
       // Le bouton reste cuivre même sur un échec (comme la maquette) : « Réessayer » n'est pas
       // un second refus, c'est la reprise volontaire de la même question.
       submitLabelA.textContent = isCorrect ? 'Suivant' : 'Réessayer';
-      if (rcontext && !isCorrect) rcontext.style.display = '';
 
       // Un seul basculement d'état porte tout le dépli, en trois temps (voir le commentaire de
       // bloc « carte à fusion » dans style.css) : teinte immédiate, forme (90-260ms), contenu
@@ -766,14 +763,14 @@ function discoverFields(item) {
       ? `${item.en_base} (${item.en_past_simple} / ${item.en_past_participle})`
       : item.en_base;
     return {
-      word, pos: item.type, example: item.example, translation: item.prompt, context: item.context,
+      word, pos: item.type, example: item.example, translation: item.prompt,
       registre: item.registre, sens: item.sens, usage: item.usage,
     };
   }
   if (item.item_type === 'grammaire') {
-    return { word: item.en, pos: null, example: item.explication, translation: item.prompt, context: item.context };
+    return { word: item.en, pos: null, example: item.explication, translation: item.prompt };
   }
-  return { word: item.en, pos: null, example: item.example, translation: item.prompt, context: item.context };
+  return { word: item.en, pos: null, example: item.example, translation: item.prompt };
 }
 
 // --- Questions -------------------------------------------------------------
@@ -799,7 +796,7 @@ function failureConsequence(item, answer, { preserveSchedule = false } = {}) {
 // (retournée ici) compte pour la note Leitner — les redemandes suivantes ne sont qu'un
 // entraînement affiché à l'écran, sous la forme d'une carte « deuxième tentative ».
 async function askUntilCorrect(container, item, {
-  instruction, question, expected, pos, example, context, registre, sens, usage, sensHint, index, total, badge, forceRetry, options, checkFn,
+  instruction, question, expected, pos, example, registre, sens, usage, sensHint, index, total, badge, forceRetry, options, checkFn,
 }) {
   let first = null;
   let attempt = 0;
@@ -808,8 +805,7 @@ async function askUntilCorrect(container, item, {
     // L'indice n'apparaît qu'à la reprise : la première tentative se joue sans filet.
     const hint = attempt > 0 ? hintMaskHtml(expected) : '';
     // Seule la première tentative décide du sort de l'item : c'est la seule qui affiche la
-    // conséquence. Le contexte, lui, est déjà vu sous la question ; dans le bloc traduction
-    // (une fois morphé) il ne revient que si la réponse était fausse — morphCard s'en charge.
+    // conséquence.
     const currentAttempt = attempt;
     const result = await morphCard(container, {
       instruction,
@@ -820,7 +816,6 @@ async function askUntilCorrect(container, item, {
       // ratés » c'est un mot déjà tombé une fois.
       retryLabel: attempt > 0 ? 'Deuxième tentative' : 'Mot déjà raté',
       hint,
-      context,
       remaining: Math.max(0, total - index - 1),
       checkFn,
       answer: expected,
@@ -851,7 +846,6 @@ async function runVocabQuestion(container, item, { index, total, badge, options,
     expected: item.en_base,
     pos: item.type,
     example: item.example,
-    context: item.context,
     registre: item.registre,
     sens: item.sens,
     usage: item.usage,
@@ -887,7 +881,6 @@ async function runGrammaireQuestion(container, item, { index, total, badge, opti
     expected: item.en,
     pos: null,
     example: item.explication,
-    context: item.context,
     index, total, badge, forceRetry, options,
     checkFn: (answer) => checkAnswer(item, answer),
   });
@@ -904,7 +897,6 @@ async function runExpressionQuestion(container, item, { index, total, badge, opt
     expected: item.en,
     pos: null,
     example: item.example,
-    context: item.context,
     index, total, badge, forceRetry, options,
     checkFn: (answer) => checkAnswer(item, answer),
   });
@@ -935,10 +927,6 @@ function hardModeQuestion(item, phase) {
       question: forwardExpected,
       expected: item.prompt,
       hint: '',
-      // Le contexte annote le mot français : il ne s'affiche pas ici, où le français est
-      // la réponse à trouver, pas la question posée (voir runHardModeRound pour la carte
-      // résultat, qui peut encore s'en servir sur un échec).
-      context: item.context,
       checkFn: (answer) => checkReverse(item, answer),
     };
   }
@@ -948,7 +936,6 @@ function hardModeQuestion(item, phase) {
       question: item.prompt,
       expected: forwardExpected,
       hint: hintMaskHtml(forwardExpected),
-      context: item.context,
       sensHint: item.sens,
       checkFn: forwardCheck,
     };
@@ -958,7 +945,6 @@ function hardModeQuestion(item, phase) {
     question: item.prompt,
     expected: forwardExpected,
     hint: '',
-    context: item.context,
     sensHint: item.sens,
     checkFn: forwardCheck,
   };
@@ -991,64 +977,89 @@ function hardModeStepIndex(itemType, phase) {
 // le trajet 1→2→3 à un item avant de passer au suivant.
 async function runHardModeRound(container, item, targetPhase, tally) {
   while (true) {
-    const { instruction, question, expected, hint, context, sensHint, checkFn } = hardModeQuestion(item, targetPhase);
+    const { instruction, question, expected, hint, sensHint, checkFn } = hardModeQuestion(item, targetPhase);
     const pos = item.item_type === 'vocabulaire' ? item.type : null;
     // Rempli par getConsequence (elle seule connaît le verdict et le résultat de la notation
     // Leitner) puis lu une fois morphCard résolue — `loop: true` signale qu'il faut reposer la
     // même phase (déjà au plancher), sinon c'est la décision renvoyée par cette fonction.
     let outcome = null;
+    const askForms = targetPhase === 3 && item.item_type === 'vocabulaire' && !!item.en_past_simple;
+
+    // Note une tentative de phase complète (base, plus formes passées le cas échéant) : une
+    // seule entrée au bilan et une seule notation Leitner par tentative.
+    const gradeRound = async (answer, isCorrect) => {
+      tally.answered += 1;
+      if (isCorrect) tally.correct += 1;
+      else tally.wrong += 1;
+
+      if (isCorrect && targetPhase === 3) {
+        await gradeHardAttempt(item, 3, true);
+        tally.exitedHard += 1;
+        tally.phasesCleared += 1;
+        // Le mot quitte les compliqués sans rejoindre aucune section aujourd'hui : à
+        // l'accueil, sa particule s'élèvera et éclatera au lieu d'atterrir quelque part.
+        noteRelease('tricky');
+        outcome = { done: true };
+        return 'Sorti du mode compliqué : le mot revient demain en découverte';
+      }
+
+      const graded = await gradeHardAttempt(item, targetPhase, isCorrect);
+
+      if (isCorrect) {
+        tally.phasesCleared += 1;
+        outcome = { done: false, newPhase: advancedPhase(targetPhase, item.item_type) };
+        return null;
+      }
+
+      // Plafonné : le plafond du jour bloque toute nouvelle tentative, mais la phase
+      // elle-même ne bouge pas — pas de pastille de transition, juste la réponse barrée.
+      if (graded.cappedToday) {
+        outcome = { done: true };
+        return { wrongAnswer: answer.trim() || null };
+      }
+      const demoted = demotedPhase(targetPhase, item.item_type);
+      outcome = demoted !== targetPhase ? { done: false, newPhase: demoted } : { loop: true };
+      return { wrongAnswer: answer.trim() || null, before: `Phase ${targetPhase}`, after: `Phase ${demoted}` };
+    };
 
     const result = await morphCard(container, {
       instruction,
       question,
       hint,
-      // Le contexte n'annote que le mot français ; il ne s'affiche sous la question qu'en
-      // phase 2/3, où c'est le français qui est demandé (en phase 1 c'est l'anglais) — mais
-      // reste montré dans le résultat même en phase 1, où le français révélé en est la réponse.
-      context: targetPhase === 1 ? null : context,
-      resultContext: context,
+      // Le sens annote le mot français : en phase 1, où le français est la réponse à trouver,
+      // il ne s'affiche qu'avec le résultat, jamais sous la question.
       sensHint: targetPhase === 1 ? null : sensHint,
       answer: expected,
       pos,
+      registre: item.registre,
+      sens: item.sens,
+      usage: item.usage,
       translation: `${question} = ${expected}`,
       example: item.example || item.explication,
       checkFn,
       getConsequence: async (answer, isCorrect) => {
-        tally.answered += 1;
-        if (isCorrect) tally.correct += 1;
-        else tally.wrong += 1;
-
-        if (isCorrect && targetPhase === 3) {
-          await gradeHardAttempt(item, 3, true);
-          tally.exitedHard += 1;
-          tally.phasesCleared += 1;
-          // Le mot quitte les compliqués sans rejoindre aucune section aujourd'hui : à
-          // l'accueil, sa particule s'élèvera et éclatera au lieu d'atterrir quelque part.
-          noteRelease('tricky');
-          outcome = { done: true };
-          return 'Sorti du mode compliqué : le mot revient demain en découverte';
-        }
-
-        const graded = await gradeHardAttempt(item, targetPhase, isCorrect);
-
-        if (isCorrect) {
-          tally.phasesCleared += 1;
-          outcome = { done: false, newPhase: advancedPhase(targetPhase, item.item_type) };
-          return null;
-        }
-
-        // Plafonné : le plafond du jour bloque toute nouvelle tentative, mais la phase
-        // elle-même ne bouge pas — pas de pastille de transition, juste la réponse barrée.
-        if (graded.cappedToday) {
-          outcome = { done: true };
-          return { wrongAnswer: answer.trim() || null };
-        }
-        const demoted = demotedPhase(targetPhase, item.item_type);
-        outcome = demoted !== targetPhase ? { done: false, newPhase: demoted } : { loop: true };
-        return { wrongAnswer: answer.trim() || null, before: `Phase ${targetPhase}`, after: `Phase ${demoted}` };
+        // Verbe irrégulier en phase 3 : une base juste ne suffit pas à sortir, la note attend
+        // la carte des formes passées (comme finalizeVocabItem dans le circuit normal).
+        if (isCorrect && askForms) return null;
+        return gradeRound(answer, isCorrect);
       },
     });
     if (result.skipped) throw new ItemSkipped();
+
+    if (askForms && result.isCorrect) {
+      const formsExpected = `${item.en_past_simple} / ${item.en_past_participle}`;
+      const formsResult = await morphCard(container, {
+        instruction: 'Passé simple / participe passé',
+        question: item.en_base,
+        answer: formsExpected,
+        pos,
+        translation: `${item.en_base} = ${formsExpected}`,
+        example: item.example,
+        checkFn: (answer) => checkConjugation(item, answer),
+        getConsequence: (answer, isCorrect) => gradeRound(answer, isCorrect),
+      });
+      if (formsResult.skipped) throw new ItemSkipped();
+    }
     if (!outcome.loop) return outcome;
   }
 }
