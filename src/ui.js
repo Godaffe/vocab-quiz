@@ -17,10 +17,7 @@ import {
 } from './card.js';
 import { icon } from './icons.js';
 import { noteOutcome, noteRelease, takeMoves, forgetMoves, playHomeMoves } from './moves.js';
-
-function todayISO() {
-  return new Date().toISOString().slice(0, 10);
-}
+import { todayISO } from './dates.js';
 
 const WEEKDAYS = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
 const MONTHS = [
@@ -312,7 +309,7 @@ export async function renderHome(container, { onStartHard, onStartLearning, onSt
   // Le dénominateur de la révision est ce qui a réellement été noté aujourd'hui plus ce qu'il
   // reste : jamais un total inventé.
   const stats = {
-    streak: getStreak(),
+    streak: getStreak(today),
     learnedCount: getLearnedCount(),
     inProgressCount: getInProgressCount(),
     learnedToday: getLearnedToday(today),

@@ -1,4 +1,5 @@
 import { all, get, run, save, getSetting } from './db.js';
+import { localDayBoundsUTC } from './dates.js';
 
 export const LEVEL_INTERVAL_DAYS = { 1: 1, 2: 2, 3: 4, 4: 8 };
 
@@ -34,7 +35,11 @@ function bumpStreak(todayISO) {
   );
 }
 
-export function getStreak() {
+// La série stockée n'est remise à 1 qu'à la prochaine réponse notée : tant que la dernière
+// activité date d'avant-hier ou plus, elle est déjà rompue et s'affiche à 0.
+export function getStreak(todayISO) {
+  const last = getSetting('last_active_date');
+  if (last !== todayISO && last !== addDays(todayISO, -1)) return 0;
   return parseInt(getSetting('streak_count') ?? '0', 10);
 }
 
@@ -319,10 +324,12 @@ export function getProgressRow(itemType, itemKey) {
 
 // Items du circuit normal déjà notés aujourd'hui — le dénominateur affiché sur l'accueil
 // est ce compte plus ce qu'il reste à faire, jamais un total inventé.
+// last_reviewed_at est un horodatage UTC : on le compare aux bornes UTC du jour local.
 export function countReviewedToday(todayISO) {
+  const [start, end] = localDayBoundsUTC(todayISO);
   const row = get(
-    "SELECT COUNT(*) as c FROM progress WHERE learning_process = 'normal' AND last_reviewed_at LIKE ?",
-    [`${todayISO}%`]
+    "SELECT COUNT(*) as c FROM progress WHERE learning_process = 'normal' AND last_reviewed_at >= ? AND last_reviewed_at < ?",
+    [start, end]
   );
   return row ? row.c : 0;
 }

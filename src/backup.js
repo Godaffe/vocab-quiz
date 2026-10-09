@@ -1,12 +1,9 @@
 import { getDb, restoreFromBytes, setSetting } from './db.js';
 import { putBlob, deleteBlob, listKeys } from './idb.js';
+import { todayISO } from './dates.js';
 
 const BACKUP_PREFIX = 'backup-';
 const MAX_INTERNAL_BACKUPS = 3;
-
-function todayISO() {
-  return new Date().toISOString().slice(0, 10);
-}
 
 // Silent, automatic, internal-only snapshot (lives in the same IndexedDB origin as the
 // main DB — protects against a bad import/mistake, not against the whole origin being

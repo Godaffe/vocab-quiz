@@ -1,10 +1,7 @@
 import { getSetting } from './db.js';
 import { buildDailySession, gradeAnswer, exitHardMode, recordHardAttempt } from './leitner.js';
 import { answersMatch, answersMatchAny } from './normalize.js';
-
-function todayISO() {
-  return new Date().toISOString().slice(0, 10);
-}
+import { todayISO } from './dates.js';
 
 export async function startSession() {
   const n = parseInt(getSetting('new_items_per_day') ?? '10', 10);
