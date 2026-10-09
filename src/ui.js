@@ -579,11 +579,11 @@ function recordOutcome(tally, before, after, firstCorrect) {
 // retourner (480 ms, la seule animation longue du système), glissement vers le haut pour
 // passer au suivant. Le bouton du bas reste le chemin fiable quand le geste n'est pas
 // disponible (souris, clavier).
-function discoverCard(area, { word, pos, example, translation, registre, sens, usage, remaining }) {
+function discoverCard(area, { word, pos, example, translation, registre, sens, usage, region, remaining }) {
   return new Promise((resolve) => {
     area.innerHTML = `
       <div class="session-body">
-        ${cardStackHtml(remaining, flipCardHtml({ word, pos, example, translation, registre, sens, usage, foot: 'Toucher ou glisser pour retourner' }))}
+        ${cardStackHtml(remaining, flipCardHtml({ word, pos, example, translation, registre, sens, usage, region, foot: 'Toucher ou glisser pour retourner' }))}
       </div>
       <div class="session-foot">
         <button type="button" class="ds-btn ds-btn--hero ds-btn--secondary" id="next-btn">Mot suivant</button>
@@ -647,11 +647,13 @@ function discoverCard(area, { word, pos, example, translation, registre, sens, u
 function morphCard(area, {
   instruction, question, hint, badge, retry = false, retryLabel, remaining = 0, checkFn,
   answer: expected, pos, translation, example, registre, sens, usage, sensHint, getConsequence,
+  questionRegion, answerRegion, promptRegion,
 }) {
   return new Promise((resolve) => {
     const card = morphCardHtml({
       instruction, question, badge, retry, retryLabel, hint: hint || '',
       answer: expected, pos, translation, example, registre, sens, usage, sensHint: sensHint || '',
+      questionRegion: questionRegion || '', answerRegion: answerRegion || '', promptRegion: promptRegion || '',
     });
     area.innerHTML = `
       <div class="session-body">
@@ -761,13 +763,13 @@ function discoverFields(item) {
       : item.en_base;
     return {
       word, pos: item.type, example: item.example, translation: item.prompt,
-      registre: item.registre, sens: item.sens, usage: item.usage,
+      registre: item.registre, sens: item.sens, usage: item.usage, region: item.region,
     };
   }
   if (item.item_type === 'grammaire') {
     return { word: item.en, pos: null, example: item.explication, translation: item.prompt };
   }
-  return { word: item.en, pos: null, example: item.example, translation: item.prompt };
+  return { word: item.en, pos: null, example: item.example, translation: item.prompt, region: item.region };
 }
 
 // --- Questions -------------------------------------------------------------
@@ -794,6 +796,7 @@ function failureConsequence(item, answer, { preserveSchedule = false } = {}) {
 // entraînement affiché à l'écran, sous la forme d'une carte « deuxième tentative ».
 async function askUntilCorrect(container, item, {
   instruction, question, expected, pos, example, registre, sens, usage, sensHint, index, total, badge, forceRetry, options, checkFn,
+  questionRegion, answerRegion, promptRegion,
 }) {
   let first = null;
   let attempt = 0;
@@ -823,6 +826,9 @@ async function askUntilCorrect(container, item, {
       usage,
       sensHint,
       example,
+      questionRegion,
+      answerRegion,
+      promptRegion,
       getConsequence: (answer, isCorrect) => (!isCorrect && currentAttempt === 0 ? failureConsequence(item, answer, options) : null),
     });
     if (result.skipped) throw new ItemSkipped();
@@ -847,6 +853,8 @@ async function runVocabQuestion(container, item, { index, total, badge, options,
     sens: item.sens,
     usage: item.usage,
     sensHint: item.sens,
+    answerRegion: item.region,
+    promptRegion: item.region,
     index, total, badge, forceRetry, options,
     checkFn: (answer) => checkBase(item, answer),
   });
@@ -859,6 +867,7 @@ async function runVocabQuestion(container, item, { index, total, badge, options,
       expected: `${item.en_past_simple} / ${item.en_past_participle}`,
       pos: item.type,
       example: item.example,
+      questionRegion: item.region,
       index, total, badge, forceRetry, options,
       checkFn: (answer) => checkConjugation(item, answer),
     });
@@ -894,6 +903,8 @@ async function runExpressionQuestion(container, item, { index, total, badge, opt
     expected: item.en,
     pos: null,
     example: item.example,
+    answerRegion: item.region,
+    promptRegion: item.region,
     index, total, badge, forceRetry, options,
     checkFn: (answer) => checkAnswer(item, answer),
   });
@@ -924,6 +935,7 @@ function hardModeQuestion(item, phase) {
       question: forwardExpected,
       expected: item.prompt,
       hint: '',
+      questionRegion: item.region,
       checkFn: (answer) => checkReverse(item, answer),
     };
   }
@@ -934,6 +946,8 @@ function hardModeQuestion(item, phase) {
       expected: forwardExpected,
       hint: hintMaskHtml(forwardExpected),
       sensHint: item.sens,
+      answerRegion: item.region,
+      promptRegion: item.region,
       checkFn: forwardCheck,
     };
   }
@@ -943,6 +957,8 @@ function hardModeQuestion(item, phase) {
     expected: forwardExpected,
     hint: '',
     sensHint: item.sens,
+    answerRegion: item.region,
+    promptRegion: item.region,
     checkFn: forwardCheck,
   };
 }
@@ -974,7 +990,9 @@ function hardModeStepIndex(itemType, phase) {
 // le trajet 1→2→3 à un item avant de passer au suivant.
 async function runHardModeRound(container, item, targetPhase, tally) {
   while (true) {
-    const { instruction, question, expected, hint, sensHint, checkFn } = hardModeQuestion(item, targetPhase);
+    const {
+      instruction, question, expected, hint, sensHint, checkFn, questionRegion, answerRegion, promptRegion,
+    } = hardModeQuestion(item, targetPhase);
     const pos = item.item_type === 'vocabulaire' ? item.type : null;
     // Rempli par getConsequence (elle seule connaît le verdict et le résultat de la notation
     // Leitner) puis lu une fois morphCard résolue — `loop: true` signale qu'il faut reposer la
@@ -1026,6 +1044,9 @@ async function runHardModeRound(container, item, targetPhase, tally) {
       // Le sens annote le mot français : en phase 1, où le français est la réponse à trouver,
       // il ne s'affiche qu'avec le résultat, jamais sous la question.
       sensHint: targetPhase === 1 ? null : sensHint,
+      questionRegion,
+      answerRegion,
+      promptRegion,
       answer: expected,
       pos,
       registre: item.registre,
@@ -1048,6 +1069,7 @@ async function runHardModeRound(container, item, targetPhase, tally) {
       const formsResult = await morphCard(container, {
         instruction: 'Passé simple / participe passé',
         question: item.en_base,
+        questionRegion: item.region,
         answer: formsExpected,
         pos,
         translation: `${item.en_base} = ${formsExpected}`,

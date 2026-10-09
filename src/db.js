@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS vocabulaire (
   registre TEXT,
   sens TEXT,
   usage TEXT,
+  region TEXT,
   updated_at TEXT NOT NULL
 );
 
@@ -38,6 +39,7 @@ CREATE TABLE IF NOT EXISTS expressions (
   meaning TEXT NOT NULL,
   example TEXT,
   context TEXT,
+  region TEXT,
   updated_at TEXT NOT NULL
 );
 
@@ -118,6 +120,14 @@ function migrateContentColumns() {
   for (const column of ['usage', 'registre', 'sens']) {
     if (!vocabColumns.has(column)) {
       db.exec(`ALTER TABLE vocabulaire ADD COLUMN ${column} TEXT`);
+    }
+  }
+  // Région (ex. « usa ») : variante régionale du mot anglais, affichée à côté de lui mais
+  // jamais lue par la vérification des réponses — colonne Région de Voc et Expressions.
+  for (const table of ['vocabulaire', 'expressions']) {
+    const columns = new Set(db.exec(`PRAGMA table_info(${table})`)[0]?.values.map((row) => row[1]) ?? []);
+    if (!columns.has('region')) {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN region TEXT`);
     }
   }
 }

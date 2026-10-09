@@ -69,7 +69,7 @@ export function cardStackHtml(remaining, innerHtml, { stretch = false } = {}) {
 // deux faces (espaceur fixe en tête) ; les champs complémentaires (exemple au recto, sens/usage
 // au verso) sont épinglés en bas via un espaceur élastique — jamais centrés au milieu, qui
 // ferait flotter le mot à une hauteur différente selon ce que la carte a d'autre à montrer.
-export function flipCardHtml({ word, pos, example, translation, registre, sens, usage, foot }) {
+export function flipCardHtml({ word, pos, example, translation, registre, sens, usage, region, foot }) {
   const tags = flipTagsHtml(pos, registre);
   return `
     <div class="ds-flip" id="flip-card">
@@ -78,7 +78,7 @@ export function flipCardHtml({ word, pos, example, translation, registre, sens, 
           <div class="ds-flip__spacer"></div>
           <div class="ds-flip__head">
             <span class="ds-prompt">Nouveau mot</span>
-            <div class="${wordSizeClass(word)}">${escapeHtml(word)}</div>
+            ${withRegion(`<div class="${wordSizeClass(word)}">${escapeHtml(word)}</div>`, region)}
             ${tags}
           </div>
           ${example ? `
@@ -114,6 +114,18 @@ export function flipCardHtml({ word, pos, example, translation, registre, sens, 
 function flipTagsHtml(pos, registre) {
   return `${pos ? `<span class="ds-flip__pos">${escapeHtml(pos)}</span>` : ''}
             ${registre ? `<span class="ds-flip__registre"><span class="ds-flip__registre-label">Registre&nbsp;·&nbsp;</span>${escapeHtml(registre)}</span>` : ''}`;
+}
+
+// Mention régionale (ex. « usa ») : un élément à part, collé à droite du mot anglais, jamais
+// dans le texte du mot lui-même — elle n'entre ni dans sa taille (wordSizeClass), ni dans la
+// vérification des réponses. Sans région, le mot est rendu tel quel, sans enveloppe.
+function regionTagHtml(region, extraClass = '') {
+  return `<span class="ds-region${extraClass ? ` ${extraClass}` : ''}">(${escapeHtml(region)})</span>`;
+}
+
+function withRegion(wordHtml, region) {
+  if (!region) return wordHtml;
+  return `<div class="ds-wordline">${wordHtml}${regionTagHtml(region)}</div>`;
 }
 
 // Taille du mot dégressive selon sa longueur : un mot ou une expression trop longue à 42px
@@ -167,6 +179,7 @@ export function answerFieldHtml({ placeholder = 'Ta réponse' } = {}) {
 export function morphCardHtml({
   instruction, question, badge = '', hint = '', retry = false, retryLabel = 'Deuxième tentative',
   answer = '', pos = '', translation = '', example = '', registre, sens, usage, sensHint = '',
+  questionRegion = '', answerRegion = '', promptRegion = '',
 }) {
   return `
     <div class="ds-morph${retry ? ' ds-morph--retry' : ''}" id="morph-card">
@@ -179,7 +192,7 @@ export function morphCardHtml({
             <div class="ds-prompt ds-morph__label" id="m-label">${escapeHtml(retry ? retryLabel : instruction)}</div>
             ${badge}
             <div class="ds-morph__wordrows">
-              <div class="ds-morph__wordclip"><div class="ds-word ds-morph__word">${escapeHtml(question)}</div></div>
+              <div class="ds-morph__wordclip">${withRegion(`<div class="ds-word ds-morph__word">${escapeHtml(question)}</div>`, questionRegion)}</div>
             </div>
             ${(pos || registre) ? `
             <div class="ds-morph__posrows">
@@ -190,6 +203,7 @@ export function morphCardHtml({
             </div>` : ''}
             ${hint ? `<div class="ds-qcard__hint">${hint}</div>` : ''}
             ${sensHint ? `<div class="ds-morph__senshint">${escapeHtml(sensHint)}</div>` : ''}
+            ${promptRegion ? `<div class="ds-morph__regionhint">${regionTagHtml(promptRegion)}</div>` : ''}
             <div class="ds-morph__field" id="m-field">
               ${answerFieldHtml()}
               <span class="ds-morph__typedwrap">
@@ -198,11 +212,12 @@ export function morphCardHtml({
                   <span class="ds-morph__typed" id="m-typed"></span>
                   <span class="ds-morph__strike"></span>
                 </span>
+                ${answerRegion ? regionTagHtml(answerRegion, 'ds-morph__typedregion') : ''}
               </span>
               <span class="ds-morph__fdisc" id="m-fdisc"></span>
             </div>
             <div class="ds-morph__answerrows">
-              <div class="ds-morph__answerclip"><div class="ds-result__answer" style="padding-top:6px">${escapeHtml(answer)}</div></div>
+              <div class="ds-morph__answerclip">${withRegion(`<div class="ds-result__answer" style="padding-top:6px">${escapeHtml(answer)}</div>`, answerRegion)}</div>
             </div>
           </div>
         </div>

@@ -917,6 +917,20 @@ input[type="text"]:focus, input[type="number"]:focus {
    (.ds-result__sens) : le répéter ici aussi, sous le mot français, ferait doublon. */
 .ds-morph--committed .ds-morph__senshint { display: none; }
 
+/* Mention régionale (« (usa) ») : élément à part, collé à droite du mot anglais, plus petit et
+   plus pâle — jamais dans le texte du mot (voir withRegion dans card.js). Sous la question en
+   français, elle dit seulement quelle variante est attendue, et disparaît comme le sens une
+   fois la réponse validée. */
+.ds-wordline { display: flex; justify-content: center; align-items: baseline; gap: 6px; min-width: 0; }
+.ds-wordline > .ds-word, .ds-wordline > .ds-result__answer { min-width: 0; }
+.ds-region { flex: none; font: 600 14px/1 var(--font-ui); color: var(--text-faint); white-space: nowrap; }
+.ds-morph--tinted .ds-region { color: rgba(255, 255, 255, .75); }
+.ds-morph--morphed .ds-morph__wordclip .ds-region { opacity: 0; transition: opacity 120ms linear 90ms; }
+.ds-morph__regionhint { margin-top: 10px; text-align: center; }
+.ds-morph--committed .ds-morph__regionhint { display: none; }
+.ds-morph__typedregion { display: none; margin-left: 6px; }
+.ds-morph--morphed.ds-morph--correct .ds-morph__typedregion { display: inline; }
+
 /* Indice masqué : les lettres révélées s'affichent, les autres restent des créneaux de
    largeur fixe — les limites de mots restent lisibles sans compter des tirets. */
 .ds-hint { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; align-items: flex-end; }
