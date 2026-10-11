@@ -179,7 +179,7 @@ export function answerFieldHtml({ placeholder = 'Ta réponse' } = {}) {
 export function morphCardHtml({
   instruction, question, badge = '', hint = '', retry = false, retryLabel = 'Deuxième tentative',
   answer = '', pos = '', translation = '', example = '', registre, sens, usage, sensHint = '',
-  questionRegion = '', answerRegion = '', promptRegion = '',
+  questionRegion = '', answerRegion = '', promptRegion = '', questionSentence = false,
 }) {
   return `
     <div class="ds-morph${retry ? ' ds-morph--retry' : ''}" id="morph-card">
@@ -192,7 +192,7 @@ export function morphCardHtml({
             <div class="ds-prompt ds-morph__label" id="m-label">${escapeHtml(retry ? retryLabel : instruction)}</div>
             ${badge}
             <div class="ds-morph__wordrows">
-              <div class="ds-morph__wordclip">${withRegion(`<div class="ds-word ds-morph__word">${escapeHtml(question)}</div>`, questionRegion)}</div>
+              <div class="ds-morph__wordclip">${withRegion(`<div class="ds-word ds-morph__word${questionSentence ? ' ds-morph__word--sentence' : ''}">${escapeHtml(question)}</div>`, questionRegion)}</div>
             </div>
             ${(pos || registre) ? `
             <div class="ds-morph__posrows">
@@ -239,6 +239,28 @@ export function morphCardHtml({
           </div>` : ''}
         </div>
       </div>
+    </div>
+  `;
+}
+
+// Carte de placement (tests d'usage) : le mot à placer, puis des phrases complètes à cocher —
+// une ou plusieurs, toujours, même quand une seule est juste, pour que l'interface ne trahisse
+// pas le nombre de bonnes réponses. Après validation, chaque phrase prend sa teinte (voir
+// runChoiceCard dans ui.js) et la règle d'usage se déplie sous la liste.
+export function choiceCardHtml({ word, options, badge = '', retry = false, usage = '' }) {
+  const items = options.map((option, i) => `
+    <button type="button" class="ds-choice__opt" data-i="${i}" aria-pressed="false">
+      <span class="ds-choice__box"></span>
+      <span class="ds-choice__text">${escapeHtml(option.text)}</span>
+    </button>`).join('');
+  return `
+    <div class="ds-choice${retry ? ' ds-choice--retry' : ''}" id="choice-card">
+      <div class="ds-prompt">${retry ? 'Mot déjà raté' : 'Où placer'}</div>
+      ${badge}
+      <div class="ds-choice__word">${escapeHtml(word)}</div>
+      <div class="ds-choice__help">Coche la ou les phrases correctes</div>
+      <div class="ds-choice__list">${items}</div>
+      ${usage ? `<div class="ds-choice__usage" hidden><div class="ds-result__blockvalue">${escapeHtml(usage)}</div></div>` : ''}
     </div>
   `;
 }

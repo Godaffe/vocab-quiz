@@ -15,7 +15,7 @@ const SHEETS = [
     table: 'vocabulaire',
     candidates: ['Voc'],
     required: ['ID', 'Fr', 'En'],
-    fields: ['fr', 'en', 'en_base', 'en_past_simple', 'en_past_participle', 'example', 'type', 'registre', 'sens', 'usage', 'region'],
+    fields: ['fr', 'en', 'en_base', 'en_past_simple', 'en_past_participle', 'example', 'type', 'registre', 'sens', 'usage', 'usage_tests', 'region'],
     mapRow(row) {
       const { base, pastSimple, pastParticiple } = parseIrregularVerb(row.En);
       return {
@@ -29,6 +29,7 @@ const SHEETS = [
         registre: row.Registre ? String(row.Registre).trim() : null,
         sens: row.Sens ? String(row.Sens).trim() : null,
         usage: row.Usage ? String(row.Usage).trim() : null,
+        usage_tests: row['Tests usage'] ? String(row['Tests usage']).trim() : null,
         region: row['Région'] ? String(row['Région']).trim() : null,
       };
     },

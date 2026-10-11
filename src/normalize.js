@@ -151,3 +151,13 @@ export function answersMatch(userInput, expected) {
 export function answersMatchAny(userInput, expectedRaw) {
   return splitAlternatives(expectedRaw).some((alt) => answersMatch(userInput, alt));
 }
+
+// Comparaison stricte des tests d'usage : la réponse porte justement sur ce qu'answersMatch
+// tolère (« to » ou article en tête, gérondif ↔ infinitif, synonymes), donc aucune de ces
+// souplesses ici : seules la casse, les accents, la ponctuation et les contractions sont neutralisées.
+export function answersMatchExact(userInput, expected) {
+  const formsA = expandContractions(userInput).map(normalizeAnswer);
+  const formsB = expandContractions(expected).map(normalizeAnswer);
+  if (formsA[0].length === 0) return false;
+  return formsA.some((a) => formsB.includes(a));
+}

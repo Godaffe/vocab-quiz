@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS vocabulaire (
   registre TEXT,
   sens TEXT,
   usage TEXT,
+  usage_tests TEXT,
   region TEXT,
   updated_at TEXT NOT NULL
 );
@@ -117,7 +118,7 @@ function migrateContentColumns() {
   // grammaticale) remplacent le contexte disambiguateur pour le vocabulaire — colonnes
   // Registre/Sens/Utilisation du classeur, n'existent que pour cette table.
   const vocabColumns = new Set(db.exec('PRAGMA table_info(vocabulaire)')[0]?.values.map((row) => row[1]) ?? []);
-  for (const column of ['usage', 'registre', 'sens']) {
+  for (const column of ['usage', 'registre', 'sens', 'usage_tests']) {
     if (!vocabColumns.has(column)) {
       db.exec(`ALTER TABLE vocabulaire ADD COLUMN ${column} TEXT`);
     }

@@ -11,11 +11,12 @@ import {
   countReviewedToday, getProgressRow, getLearnedToday, getStartedToday,
 } from './leitner.js';
 import {
-  escapeHtml, sessionHeaderHtml, barHtml, dotsProgressHtml, cardStackHtml, flipCardHtml, morphCardHtml,
+  escapeHtml, sessionHeaderHtml, barHtml, dotsProgressHtml, cardStackHtml, flipCardHtml, morphCardHtml, choiceCardHtml,
   hintMaskHtml, consequenceHtml, statPillHtml, onSwipe, onCardTap,
   onCardPress, throwCardOut, enterCard, advanceStack, spawnShards,
 } from './card.js';
 import { icon } from './icons.js';
+import { parseUsageTests, pickUsageTests, checkGap, checkChoice, gapQuestion, gapSolution } from './usageTests.js';
 import { noteOutcome, noteRelease, takeMoves, forgetMoves, playHomeMoves } from './moves.js';
 import { todayISO } from './dates.js';
 
@@ -647,13 +648,14 @@ function discoverCard(area, { word, pos, example, translation, registre, sens, u
 function morphCard(area, {
   instruction, question, hint, badge, retry = false, retryLabel, remaining = 0, checkFn,
   answer: expected, pos, translation, example, registre, sens, usage, sensHint, getConsequence,
-  questionRegion, answerRegion, promptRegion,
+  questionRegion, answerRegion, promptRegion, questionSentence = false,
 }) {
   return new Promise((resolve) => {
     const card = morphCardHtml({
       instruction, question, badge, retry, retryLabel, hint: hint || '',
       answer: expected, pos, translation, example, registre, sens, usage, sensHint: sensHint || '',
       questionRegion: questionRegion || '', answerRegion: answerRegion || '', promptRegion: promptRegion || '',
+      questionSentence,
     });
     area.innerHTML = `
       <div class="session-body">
@@ -754,6 +756,129 @@ function morphCard(area, {
   });
 }
 
+// Carte de placement (tests d'usage) : même contrat que morphCard — se résout sur
+// { isCorrect } une fois la correction vue (ou { skipped: true }), et `getConsequence(isCorrect)`
+// (attendue, peut être async) fournit la conséquence affichée sous la carte. Pas de deuxième
+// tentative : avec les bonnes phrases déjà colorées, recocher ne serait qu'une formalité.
+function choiceCard(area, { word, test, usage, badge, retry = false, remaining = 0, getConsequence }) {
+  return new Promise((resolve) => {
+    // Ordre mélangé à chaque affichage : la bonne phrase ne tombe pas toujours au même rang.
+    const order = test.options.map((_, i) => i).sort(() => Math.random() - 0.5);
+    const shown = order.map((i) => test.options[i]);
+    const card = choiceCardHtml({ word, options: shown, badge, retry, usage });
+    area.innerHTML = `
+      <div class="session-body">
+        ${remaining > 0 ? cardStackHtml(remaining, card) : card}
+      </div>
+      <div class="session-foot" id="mode-foot">
+        <button type="button" class="ds-btn ds-btn--hero" id="submit-btn">Valider</button>
+        <button type="button" class="ds-btn ds-btn--hero ds-btn--ghost" id="skip-btn">Passer</button>
+      </div>
+    `;
+
+    const root = area.querySelector('#choice-card');
+    const optionEls = [...root.querySelectorAll('.ds-choice__opt')];
+    const submitBtn = area.querySelector('#submit-btn');
+    const skipBtn = area.querySelector('#skip-btn');
+    const foot = area.querySelector('#mode-foot');
+    const selected = new Set();
+    let settled = false;
+    let answered = false;
+    let lastCorrect = false;
+
+    for (const el of optionEls) {
+      el.addEventListener('click', () => {
+        if (settled) return;
+        const i = Number(el.dataset.i);
+        if (selected.has(i)) selected.delete(i);
+        else selected.add(i);
+        el.classList.toggle('ds-choice__opt--on', selected.has(i));
+        el.setAttribute('aria-pressed', String(selected.has(i)));
+      });
+    }
+
+    const skip = () => {
+      if (settled) return;
+      settled = true;
+      resolve({ skipped: true });
+    };
+
+    const submit = async () => {
+      if (settled) return;
+      settled = true;
+      // Les indices cochés portent sur l'ordre affiché : on les ramène à l'ordre du test.
+      const isCorrect = checkChoice(test, [...selected].map((i) => order[i]));
+      lastCorrect = isCorrect;
+      const consequence = getConsequence ? await getConsequence(isCorrect) : null;
+
+      optionEls.forEach((el, i) => {
+        const right = shown[i].correct;
+        const picked = selected.has(i);
+        el.disabled = true;
+        if (right && picked) el.classList.add('ds-choice__opt--right');
+        else if (right) el.classList.add('ds-choice__opt--missed');
+        else if (picked) el.classList.add('ds-choice__opt--wrong');
+      });
+      root.classList.add(isCorrect ? 'ds-choice--correct' : 'ds-choice--wrong');
+      const usageEl = root.querySelector('.ds-choice__usage');
+      if (usageEl) usageEl.hidden = false;
+      submitBtn.textContent = 'Suivant';
+      answered = true;
+      foot.classList.add('session-foot--answered');
+
+      if (consequence) {
+        await wait(450);
+        const consequenceHtmlBlock = typeof consequence === 'string'
+          ? `<div class="ds-alert ds-alert--success">${escapeHtml(consequence)}</div>`
+          : consequenceHtml(consequence);
+        area.querySelector('.session-body').insertAdjacentHTML('beforeend', consequenceHtmlBlock);
+      }
+    };
+
+    submitBtn.addEventListener('click', () => (answered ? resolve({ isCorrect: lastCorrect }) : submit()));
+    skipBtn.addEventListener('click', skip);
+    onSwipe(area.querySelector('.session-body'), { onRight: skip });
+  });
+}
+
+// --- Tests d'usage ---------------------------------------------------------
+
+// Tests d'usage posés à cette révision du mot : un par manière, en rotation sur le nombre de
+// révisions déjà faites (spec : comptes-rendus/spec-tests-usage.md). Vide pour un mot sans
+// colonne « Tests usage » exploitable — il garde alors exactement ses questions habituelles.
+function usageStepsFor(item) {
+  if (item.item_type !== 'vocabulaire' || !item.usage_tests) return [];
+  return pickUsageTests(parseUsageTests(item.usage_tests), item.total_reviews);
+}
+
+// Un test d'usage dans le circuit normal : un trou se rejoue jusqu'à la bonne réponse comme
+// les autres questions (seule la 1re tentative compte), un placement se joue une fois.
+async function askUsageTest(container, item, { test }, { index, total, badge, forceRetry, options }) {
+  if (test.kind === 'gap') {
+    return askUntilCorrect(container, item, {
+      instruction: 'Complète la phrase',
+      question: gapQuestion(test),
+      questionSentence: true,
+      expected: test.answers[0],
+      solution: gapSolution(test),
+      usage: item.usage,
+      index, total, badge, forceRetry, options,
+      checkFn: (answer) => checkGap(test, answer),
+    });
+  }
+  const result = await choiceCard(container, {
+    word: item.en_base,
+    test,
+    usage: item.usage,
+    badge,
+    retry: forceRetry,
+    remaining: Math.max(0, total - index - 1),
+    getConsequence: (isCorrect) => (isCorrect ? null : failureConsequence(item, '', options)),
+  });
+  if (result.skipped) throw new ItemSkipped();
+  return result.isCorrect;
+}
+
 // --- Passage de découverte -------------------------------------------------
 
 function discoverFields(item) {
@@ -796,7 +921,7 @@ function failureConsequence(item, answer, { preserveSchedule = false } = {}) {
 // entraînement affiché à l'écran, sous la forme d'une carte « deuxième tentative ».
 async function askUntilCorrect(container, item, {
   instruction, question, expected, pos, example, registre, sens, usage, sensHint, index, total, badge, forceRetry, options, checkFn,
-  questionRegion, answerRegion, promptRegion,
+  questionRegion, answerRegion, promptRegion, questionSentence = false, solution,
 }) {
   let first = null;
   let attempt = 0;
@@ -820,7 +945,8 @@ async function askUntilCorrect(container, item, {
       checkFn,
       answer: expected,
       pos,
-      translation: `${question} = ${expected}`,
+      // Un test d'usage montre en corrigé la phrase complète plutôt que « question = réponse ».
+      translation: solution ?? `${question} = ${expected}`,
       registre,
       sens,
       usage,
@@ -829,6 +955,7 @@ async function askUntilCorrect(container, item, {
       questionRegion,
       answerRegion,
       promptRegion,
+      questionSentence,
       getConsequence: (answer, isCorrect) => (!isCorrect && currentAttempt === 0 ? failureConsequence(item, answer, options) : null),
     });
     if (result.skipped) throw new ItemSkipped();
@@ -842,6 +969,7 @@ async function askUntilCorrect(container, item, {
 
 async function runVocabQuestion(container, item, { index, total, badge, options, forceRetry, tally, markResult }) {
   const before = getProgressRow(item.item_type, item.item_key);
+  const usageSteps = usageStepsFor(item);
 
   const baseCorrect = await askUntilCorrect(container, item, {
     instruction: 'Traduis en anglais',
@@ -851,7 +979,9 @@ async function runVocabQuestion(container, item, { index, total, badge, options,
     example: item.example,
     registre: item.registre,
     sens: item.sens,
-    usage: item.usage,
+    // Des tests d'usage suivent : la règle n'apparaît qu'avec leur corrigé, sinon elle
+    // donnerait la réponse juste avant la question.
+    usage: usageSteps.length ? null : item.usage,
     sensHint: item.sens,
     answerRegion: item.region,
     promptRegion: item.region,
@@ -873,8 +1003,17 @@ async function runVocabQuestion(container, item, { index, total, badge, options,
     });
   }
 
-  await finalizeVocabItem(item, baseCorrect, conjugationCorrect, options);
-  const correct = baseCorrect && conjugationCorrect;
+  // Tous les tests d'usage sont posés même après un échec : chacun est un entraînement utile,
+  // et la note (une seule par mot) attend de toute façon la fin du circuit.
+  let usageCorrect = true;
+  for (const step of usageSteps) {
+    const ok = await askUsageTest(container, item, step, { index, total, badge, forceRetry, options });
+    usageCorrect = usageCorrect && ok;
+  }
+
+  // Comme les formes passées : le mot n'est réussi que si tout le circuit l'est.
+  await finalizeVocabItem(item, baseCorrect, conjugationCorrect && usageCorrect, options);
+  const correct = baseCorrect && conjugationCorrect && usageCorrect;
   recordOutcome(tally, before, getProgressRow(item.item_type, item.item_key), correct);
   markResult?.(index, correct);
 }
@@ -998,7 +1137,12 @@ async function runHardModeRound(container, item, targetPhase, tally) {
     // Leitner) puis lu une fois morphCard résolue — `loop: true` signale qu'il faut reposer la
     // même phase (déjà au plancher), sinon c'est la décision renvoyée par cette fonction.
     let outcome = null;
-    const askForms = targetPhase === 3 && item.item_type === 'vocabulaire' && !!item.en_past_simple;
+    // Phase 3 d'un mot de vocabulaire : la traduction juste ne suffit pas, les cartes de suite
+    // (formes passées d'un verbe irrégulier, puis un test d'usage par manière) doivent toutes
+    // l'être aussi — comme dans le circuit normal.
+    const followUps = targetPhase === 3 && item.item_type === 'vocabulaire'
+      ? [...(item.en_past_simple ? [{ forms: true }] : []), ...usageStepsFor(item)]
+      : [];
 
     // Note une tentative de phase complète (base, plus formes passées le cas échéant) : une
     // seule entrée au bilan et une seule notation Leitner par tentative.
@@ -1051,36 +1195,72 @@ async function runHardModeRound(container, item, targetPhase, tally) {
       pos,
       registre: item.registre,
       sens: item.sens,
-      usage: item.usage,
+      // Règle masquée ici quand des tests d'usage suivent : elle donnerait leur réponse.
+      usage: followUps.some((step) => step.test) ? null : item.usage,
       translation: `${question} = ${expected}`,
       example: item.example || item.explication,
       checkFn,
       getConsequence: async (answer, isCorrect) => {
-        // Verbe irrégulier en phase 3 : une base juste ne suffit pas à sortir, la note attend
-        // la carte des formes passées (comme finalizeVocabItem dans le circuit normal).
-        if (isCorrect && askForms) return null;
+        // Une base juste ne suffit pas à sortir quand des cartes de suite restent : la note
+        // attend la dernière d'entre elles (comme finalizeVocabItem dans le circuit normal).
+        if (isCorrect && followUps.length) return null;
         return gradeRound(answer, isCorrect);
       },
     });
     if (result.skipped) throw new ItemSkipped();
 
-    if (askForms && result.isCorrect) {
-      const formsExpected = `${item.en_past_simple} / ${item.en_past_participle}`;
-      const formsResult = await morphCard(container, {
-        instruction: 'Passé simple / participe passé',
-        question: item.en_base,
-        questionRegion: item.region,
-        answer: formsExpected,
-        pos,
-        translation: `${item.en_base} = ${formsExpected}`,
-        example: item.example,
-        checkFn: (answer) => checkConjugation(item, answer),
-        getConsequence: (answer, isCorrect) => gradeRound(answer, isCorrect),
-      });
-      if (formsResult.skipped) throw new ItemSkipped();
+    // Une seule notation par tentative de phase : le premier échec la porte (et arrête la
+    // série), sinon c'est la dernière carte, réussie, qui la déclenche.
+    if (followUps.length && result.isCorrect) {
+      for (let i = 0; i < followUps.length; i += 1) {
+        const last = i === followUps.length - 1;
+        const consequence = (answer, ok) => (!ok || last ? gradeRound(answer, ok) : null);
+        const ok = await runHardFollowUp(container, item, followUps[i], pos, consequence);
+        if (!ok) break;
+      }
     }
     if (!outcome.loop) return outcome;
   }
+}
+
+// Une carte de suite en phase 3 du mode compliqué (formes passées ou test d'usage), jouée une
+// fois : `consequence(answer, isCorrect)` décide de la notation et de ce qui s'affiche.
+async function runHardFollowUp(container, item, step, pos, consequence) {
+  let result;
+  if (step.forms) {
+    const formsExpected = `${item.en_past_simple} / ${item.en_past_participle}`;
+    result = await morphCard(container, {
+      instruction: 'Passé simple / participe passé',
+      question: item.en_base,
+      questionRegion: item.region,
+      answer: formsExpected,
+      pos,
+      translation: `${item.en_base} = ${formsExpected}`,
+      example: item.example,
+      checkFn: (answer) => checkConjugation(item, answer),
+      getConsequence: consequence,
+    });
+  } else if (step.test.kind === 'gap') {
+    result = await morphCard(container, {
+      instruction: 'Complète la phrase',
+      question: gapQuestion(step.test),
+      questionSentence: true,
+      answer: step.test.answers[0],
+      translation: gapSolution(step.test),
+      usage: item.usage,
+      checkFn: (answer) => checkGap(step.test, answer),
+      getConsequence: consequence,
+    });
+  } else {
+    result = await choiceCard(container, {
+      word: item.en_base,
+      test: step.test,
+      usage: item.usage,
+      getConsequence: (isCorrect) => consequence('', isCorrect),
+    });
+  }
+  if (result.skipped) throw new ItemSkipped();
+  return result.isCorrect;
 }
 
 // --- Modes -----------------------------------------------------------------
