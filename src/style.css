@@ -966,7 +966,12 @@ input[type="text"]:focus, input[type="number"]:focus {
   background: var(--stone-100); box-shadow: inset 0 0 0 1px #5C5443;
   font: 400 13px/1.5 var(--font-ui); color: var(--text-body); font-style: italic;
 }
-.ds-result__hl { font-weight: 700; font-style: normal; }
+.ds-result__hl { font-weight: 700; }
+/* Éléments de la règle d'usage dans l'exemple (code « __mot__ » de l'Excel) : soulignés et en
+   gras, comme le mot appris (Anto, 13/10 11:29). */
+.ds-result__ul { font-weight: 700; text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 3px; }
+/* Carte de découverte : pas de verdict, le gras du mot appris prend le cuivre de la carte. */
+.ds-example__text .ds-result__hl { color: var(--copper-600); }
 .ds-morph--correct .ds-result__hl { color: var(--green-600); }
 .ds-morph--wrong .ds-result__hl { color: var(--crimson-600); }
 .ds-result__blocklabel { font: 600 12px/1.25 var(--font-ui); text-transform: uppercase; letter-spacing: .09em; color: var(--text-muted); margin-bottom: 4px; }
@@ -1472,9 +1477,71 @@ tbody tr:nth-child(even) td { background: var(--paper); }
 .ds-choice__opt--wrong { border-color: var(--crimson-500); background: var(--crimson-50); color: var(--crimson-700); }
 .ds-choice__opt--wrong .ds-choice__text { text-decoration: line-through; }
 .ds-choice__opt--wrong .ds-choice__box { border-color: var(--crimson-500); background: var(--crimson-500); box-shadow: inset 0 0 0 3px var(--crimson-50); }
-.ds-choice__usage { margin-top: var(--space-4); }
-.ds-choice__usage .ds-result__blockvalue {
-  box-sizing: border-box; padding: 10px 12px; border-radius: var(--radius-lg);
-  background: #E4DCC7; border: 1px solid var(--copper-800); text-align: center;
-  font: 600 12.5px/1.45 var(--font-ui); color: var(--copper-800);
+/* Règle d'usage sous une carte d'usage ratée (dernière question du mot seulement) : même
+   encadré cuivre que sur la carte réponse, déjà visible et sans marges latérales. */
+.ds-choice__rule { margin-top: var(--space-4); }
+.ds-choice__rule .ds-result__usage { opacity: 1; transform: none; padding: 0; }
+
+/* Carte type de mot (test d'usage) : la règle brute en grand, chaque case « <…> » devient un
+   emplacement à remplir (cadre pointillé, cuivre quand il est actif), puis une grille de six
+   boutons de types. Après validation : case verte si juste, cramoisie sinon ; dans une case
+   fausse, type en trop barré, type oublié en pointillé vert. L'exemple et la règle d'usage se
+   déplient dessous. */
+.ds-type__rule {
+  margin-top: 14px; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px;
+  font: 700 22px/1.25 var(--font-display); letter-spacing: -.02em; color: var(--text-strong);
 }
+.ds-type__group { display: inline-flex; align-items: center; gap: 8px; }
+.ds-type__slot {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 64px; min-height: 40px;
+  padding: 4px 6px; cursor: pointer; background: var(--paper);
+  border: 2px dashed var(--ink-400); border-radius: var(--radius-md);
+  transition: background-color 120ms linear, border-color 120ms linear;
+}
+.ds-type__slot--active { border-style: solid; border-color: var(--copper-500); background: var(--copper-50); }
+.ds-type__slot:disabled { cursor: default; }
+.ds-type__slot--right { border-style: solid; border-color: var(--green-500); background: var(--green-50); }
+.ds-type__slot--wrong { border-style: solid; border-color: var(--crimson-500); background: var(--crimson-50); }
+.ds-type__chips { display: inline-flex; flex-wrap: wrap; justify-content: center; gap: 4px; }
+.ds-type__chip {
+  padding: 3px 8px; border-radius: var(--radius-xs); background: var(--copper-500); color: #fff;
+  font: 600 13px/1.3 var(--font-ui); letter-spacing: 0; white-space: nowrap;
+}
+.ds-type__chip--right { background: var(--green-500); }
+.ds-type__chip--wrong { background: var(--crimson-500); text-decoration: line-through; }
+.ds-type__chip--missed { background: transparent; color: var(--green-700); outline: 1.5px dashed var(--green-500); outline-offset: -1.5px; }
+.ds-type__btns { margin-top: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ds-type__btn {
+  min-height: var(--tap-min); padding: 8px 10px; cursor: pointer;
+  background: var(--paper); border: 1.5px solid var(--border-field); border-radius: var(--radius-md);
+  font: 600 14px/1.3 var(--font-ui); color: var(--text-body);
+  transition: background-color 120ms linear, border-color 120ms linear;
+}
+.ds-type__btn--on { border-color: var(--copper-500); background: var(--copper-50); color: var(--copper-700); }
+.ds-type__btn:disabled { cursor: default; opacity: .55; }
+
+/* Exemples et règles sur plusieurs lignes (dialogues « — réplique », deux emplois) : les
+   retours à la ligne de la cellule Excel sont gardés. */
+.ds-example__text, .ds-flip__fieldtext, .ds-result__usage .ds-result__blockvalue,
+.ds-result__example .ds-result__blockvalue { white-space: pre-line; }
+
+/* Carte phrase à trous (test d'usage) : la phrase en grand, le champ dessous. Au corrigé, le
+   trou devient la réponse dans la phrase — verte si juste, sinon la saisie barrée en cramoisi
+   suivie de la bonne réponse en vert. */
+.ds-gap__sentence {
+  margin-top: 14px; text-align: center; text-wrap: pretty;
+  font: 700 22px/1.35 var(--font-display); letter-spacing: -.015em; color: var(--text-strong);
+}
+.ds-gap__slot { color: var(--copper-600); white-space: nowrap; }
+.ds-gap__right { padding: 0 6px; border-radius: var(--radius-xs); background: var(--green-50); color: var(--green-700); }
+.ds-gap__wrong { padding: 0 6px; border-radius: var(--radius-xs); background: var(--crimson-50); color: var(--crimson-700); text-decoration: line-through; }
+.ds-gap__field { margin-top: 16px; }
+
+/* Carte réponse complète d'un mot à questions d'usage, mot raté : rien n'a été saisi, la zone
+   « Ta réponse » de la carte à fusion n'a rien à montrer (juste, elle porte le mot). */
+.ds-morph--recap-wrong .ds-morph__field { display: none; }
+
+/* Formes irrégulières (« (clung / clung) ») sous le mot, sur la carte réponse complète d'un
+   verbe : plus petites et grisées, elles accompagnent le mot sans lui disputer la place. */
+.ds-morph__forms { display: none; text-align: center; font: 500 17px/1.3 var(--font-ui); letter-spacing: 0; color: rgba(255, 255, 255, .7); padding-bottom: 4px; }
+.ds-morph--recap .ds-morph__forms { display: block; }

@@ -11,12 +11,15 @@ import {
   countReviewedToday, getProgressRow, getLearnedToday, getStartedToday,
 } from './leitner.js';
 import {
-  escapeHtml, sessionHeaderHtml, barHtml, dotsProgressHtml, cardStackHtml, flipCardHtml, morphCardHtml, choiceCardHtml,
+  escapeHtml, sessionHeaderHtml, barHtml, dotsProgressHtml, cardStackHtml, flipCardHtml, morphCardHtml, choiceCardHtml, typeCardHtml, typeChipHtml, usageRuleHtml, gapCardHtml,
   hintMaskHtml, consequenceHtml, statPillHtml, onSwipe, onCardTap,
   onCardPress, throwCardOut, enterCard, advanceStack, spawnShards,
 } from './card.js';
 import { icon } from './icons.js';
-import { parseUsageTests, pickUsageTests, checkGap, checkChoice, gapQuestion, gapSolution } from './usageTests.js';
+import {
+  parseUsageTests, pickUsageTests, checkGap, checkChoice,
+  typeButtons, typeSlots, checkType, checkTypeSlot,
+} from './usageTests.js';
 import { noteOutcome, noteRelease, takeMoves, forgetMoves, playHomeMoves } from './moves.js';
 import { todayISO } from './dates.js';
 
@@ -760,12 +763,12 @@ function morphCard(area, {
 // { isCorrect } une fois la correction vue (ou { skipped: true }), et `getConsequence(isCorrect)`
 // (attendue, peut être async) fournit la conséquence affichée sous la carte. Pas de deuxième
 // tentative : avec les bonnes phrases déjà colorées, recocher ne serait qu'une formalité.
-function choiceCard(area, { word, test, usage, badge, retry = false, remaining = 0, getConsequence }) {
+function choiceCard(area, { word, test, rule, badge, retry = false, remaining = 0, getConsequence }) {
   return new Promise((resolve) => {
     // Ordre mélangé à chaque affichage : la bonne phrase ne tombe pas toujours au même rang.
     const order = test.options.map((_, i) => i).sort(() => Math.random() - 0.5);
     const shown = order.map((i) => test.options[i]);
-    const card = choiceCardHtml({ word, options: shown, badge, retry, usage });
+    const card = choiceCardHtml({ word, options: shown, badge, retry, rule });
     area.innerHTML = `
       <div class="session-body">
         ${remaining > 0 ? cardStackHtml(remaining, card) : card}
@@ -820,8 +823,8 @@ function choiceCard(area, { word, test, usage, badge, retry = false, remaining =
         else if (picked) el.classList.add('ds-choice__opt--wrong');
       });
       root.classList.add(isCorrect ? 'ds-choice--correct' : 'ds-choice--wrong');
-      const usageEl = root.querySelector('.ds-choice__usage');
-      if (usageEl) usageEl.hidden = false;
+      const ruleEl = root.querySelector('.ds-choice__rule');
+      if (ruleEl && !isCorrect) ruleEl.hidden = false;
       submitBtn.textContent = 'Suivant';
       answered = true;
       foot.classList.add('session-foot--answered');
@@ -841,6 +844,231 @@ function choiceCard(area, { word, test, usage, badge, retry = false, remaining =
   });
 }
 
+// Carte type de mot : une case active à la fois (la première au départ, puis celle qu'on
+// touche) ; un bouton ajoute ou retire son type dans la case active. « Valider » s'allume
+// quand chaque case a au moins un type. Corrigé case par case, et la règle d'usage si la carte
+// est ratée et que c'est la dernière question du mot.
+function typeCard(area, { test, rule, badge, retry = false, remaining = 0, getConsequence }) {
+  return new Promise((resolve) => {
+    const expected = typeSlots(test);
+    const card = typeCardHtml({ parts: test.parts, buttons: typeButtons(test), badge, retry, rule });
+    area.innerHTML = `
+      <div class="session-body">
+        ${remaining > 0 ? cardStackHtml(remaining, card) : card}
+      </div>
+      <div class="session-foot" id="mode-foot">
+        <button type="button" class="ds-btn ds-btn--hero" id="submit-btn" disabled>Valider</button>
+        <button type="button" class="ds-btn ds-btn--hero ds-btn--ghost" id="skip-btn">Passer</button>
+      </div>
+    `;
+
+    const root = area.querySelector('#type-card');
+    const slotEls = [...root.querySelectorAll('.ds-type__slot')];
+    const buttonEls = [...root.querySelectorAll('.ds-type__btn')];
+    const submitBtn = area.querySelector('#submit-btn');
+    const skipBtn = area.querySelector('#skip-btn');
+    const foot = area.querySelector('#mode-foot');
+    const filled = expected.map(() => []);
+    let active = 0;
+    let settled = false;
+    let answered = false;
+    let lastCorrect = false;
+
+    const render = () => {
+      slotEls.forEach((el, i) => {
+        el.classList.toggle('ds-type__slot--active', i === active);
+        el.setAttribute('aria-pressed', String(i === active));
+        el.querySelector('.ds-type__chips').innerHTML = filled[i].map((t) => typeChipHtml(t)).join('');
+      });
+      for (const el of buttonEls) {
+        const on = filled[active].includes(el.dataset.t);
+        el.classList.toggle('ds-type__btn--on', on);
+        el.setAttribute('aria-pressed', String(on));
+      }
+      submitBtn.disabled = filled.some((slot) => slot.length === 0);
+    };
+
+    slotEls.forEach((el, i) => el.addEventListener('click', () => {
+      if (settled) return;
+      active = i;
+      render();
+    }));
+    for (const el of buttonEls) {
+      el.addEventListener('click', () => {
+        if (settled) return;
+        const slot = filled[active];
+        const at = slot.indexOf(el.dataset.t);
+        if (at >= 0) slot.splice(at, 1);
+        else slot.push(el.dataset.t);
+        render();
+      });
+    }
+
+    const skip = () => {
+      if (settled) return;
+      settled = true;
+      resolve({ skipped: true });
+    };
+
+    const submit = async () => {
+      if (settled) return;
+      settled = true;
+      const isCorrect = checkType(test, filled);
+      lastCorrect = isCorrect;
+      const consequence = getConsequence ? await getConsequence(isCorrect) : null;
+
+      // Case juste : ses types en vert. Case fausse : types en trop barrés, types oubliés en
+      // pointillé vert — même code que la carte de placement.
+      slotEls.forEach((el, i) => {
+        const right = checkTypeSlot(expected[i], filled[i]);
+        el.disabled = true;
+        el.classList.remove('ds-type__slot--active');
+        el.classList.add(right ? 'ds-type__slot--right' : 'ds-type__slot--wrong');
+        const chips = filled[i].map((t) => typeChipHtml(t, expected[i].includes(t) ? 'right' : 'wrong'))
+          .concat(expected[i].filter((t) => !filled[i].includes(t)).map((t) => typeChipHtml(t, 'missed')));
+        el.querySelector('.ds-type__chips').innerHTML = chips.join('');
+      });
+      for (const el of buttonEls) {
+        el.disabled = true;
+        el.classList.remove('ds-type__btn--on');
+      }
+      root.classList.add(isCorrect ? 'ds-choice--correct' : 'ds-choice--wrong');
+      const ruleEl = root.querySelector('.ds-choice__rule');
+      if (ruleEl && !isCorrect) ruleEl.hidden = false;
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Suivant';
+      answered = true;
+      foot.classList.add('session-foot--answered');
+
+      if (consequence) {
+        await wait(450);
+        const consequenceHtmlBlock = typeof consequence === 'string'
+          ? `<div class="ds-alert ds-alert--success">${escapeHtml(consequence)}</div>`
+          : consequenceHtml(consequence);
+        area.querySelector('.session-body').insertAdjacentHTML('beforeend', consequenceHtmlBlock);
+      }
+    };
+
+    submitBtn.addEventListener('click', () => (answered ? resolve({ isCorrect: lastCorrect }) : submit()));
+    skipBtn.addEventListener('click', skip);
+    onSwipe(area.querySelector('.session-body'), { onRight: skip });
+  });
+}
+
+// Carte phrase à trous (tests d'usage) : une tentative, corrigée sur la même vue — le trou
+// laisse place à la réponse dans la phrase (en vert si juste, sinon la saisie barrée suivie de
+// la bonne réponse), avec la règle d'usage si `rule` est fourni et que la réponse est fausse.
+// Se résout sur { answer, isCorrect } ou { skipped: true }, comme morphCard.
+function gapCard(area, { test, rule = '', badge, label, retry = false, remaining = 0, getConsequence }) {
+  return new Promise((resolve) => {
+    const card = gapCardHtml({ before: test.before, after: test.after, hint: test.hint, badge, label, retry, rule });
+    area.innerHTML = `
+      <div class="session-body">
+        ${remaining > 0 ? cardStackHtml(remaining, card) : card}
+      </div>
+      <div class="session-foot" id="mode-foot">
+        <button type="button" class="ds-btn ds-btn--hero" id="submit-btn">Valider</button>
+        <button type="button" class="ds-btn ds-btn--hero ds-btn--ghost" id="skip-btn">Passer</button>
+      </div>
+    `;
+
+    const root = area.querySelector('#gap-card');
+    const input = area.querySelector('#answer-input');
+    const slot = area.querySelector('#gap-slot');
+    const submitBtn = area.querySelector('#submit-btn');
+    const skipBtn = area.querySelector('#skip-btn');
+    const foot = area.querySelector('#mode-foot');
+    let settled = false;
+    let answered = false;
+    let lastAnswer = '';
+    let lastCorrect = false;
+
+    const skip = () => {
+      if (settled) return;
+      settled = true;
+      resolve({ skipped: true });
+    };
+
+    const submit = async () => {
+      if (settled) return;
+      settled = true;
+      const raw = input.value;
+      const isCorrect = checkGap(test, raw);
+      lastAnswer = raw;
+      lastCorrect = isCorrect;
+      const consequence = getConsequence ? await getConsequence(raw, isCorrect) : null;
+
+      const typed = raw.trim();
+      slot.innerHTML = isCorrect
+        ? `<span class="ds-gap__right">${escapeHtml(typed)}</span>`
+        : `${typed ? `<span class="ds-gap__wrong">${escapeHtml(typed)}</span> ` : ''}<span class="ds-gap__right">${escapeHtml(test.answers[0])}</span>`;
+      slot.classList.add('ds-gap__slot--done');
+      input.blur();
+      root.querySelector('.ds-gap__field').hidden = true;
+      root.classList.add(isCorrect ? 'ds-choice--correct' : 'ds-choice--wrong');
+      const ruleEl = root.querySelector('.ds-choice__rule');
+      if (ruleEl && !isCorrect) ruleEl.hidden = false;
+      submitBtn.textContent = 'Suivant';
+      answered = true;
+      foot.classList.add('session-foot--answered');
+
+      if (consequence) {
+        await wait(450);
+        const consequenceHtmlBlock = typeof consequence === 'string'
+          ? `<div class="ds-alert ds-alert--success">${escapeHtml(consequence)}</div>`
+          : consequenceHtml(consequence);
+        area.querySelector('.session-body').insertAdjacentHTML('beforeend', consequenceHtmlBlock);
+      }
+    };
+
+    const finish = () => resolve({ answer: lastAnswer, isCorrect: lastCorrect });
+    submitBtn.addEventListener('click', () => (answered ? finish() : submit()));
+    skipBtn.addEventListener('click', skip);
+    onSwipe(area.querySelector('.session-body'), { onRight: skip });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') submit();
+    });
+    input.focus({ preventScroll: true });
+  });
+}
+
+// Carte réponse complète d'un mot à questions d'usage, après la dernière d'entre elles : la
+// carte réponse habituelle (mot, traduction, sens, usage, exemple) déjà dépliée, teintée selon
+// le verdict du mot entier. Rien à saisir : « Suivant » passe au mot suivant.
+function wordCard(area, item, isCorrect, { remaining = 0 } = {}) {
+  return new Promise((resolve) => {
+    const card = morphCardHtml({
+      instruction: '', question: item.en_base, answer: item.en_base, pos: item.type,
+      // Le bandeau ne porte que le français ; les formes irrégulières se lisent sous le mot.
+      translation: item.prompt, registre: item.registre, sens: item.sens,
+      forms: item.en_past_simple ? `(${item.en_past_simple} / ${item.en_past_participle})` : '',
+      usage: item.usage, example: item.example, answerRegion: item.region,
+    });
+    area.innerHTML = `
+      <div class="session-body">
+        ${remaining > 0 ? cardStackHtml(remaining, card) : card}
+      </div>
+      <div class="session-foot session-foot--answered" id="mode-foot">
+        <button type="button" class="ds-btn ds-btn--hero" id="submit-btn">Suivant</button>
+      </div>
+    `;
+    const root = area.querySelector('#morph-card');
+    area.querySelector('#answer-input').disabled = true;
+    // Verdict juste : la carte à fusion affiche le mot dans la zone de saisie (comme une
+    // réponse tapée) ; faux, il est dans la ligne « réponse attendue » et la zone reste vide.
+    area.querySelector('#m-typed').textContent = item.en_base;
+    if (!isCorrect) root.classList.add('ds-morph--recap-wrong');
+    area.querySelector('#m-label').textContent = isCorrect ? 'Mot réussi' : 'Mot à revoir';
+    area.querySelector('#m-disc').innerHTML = icon(isCorrect ? 'check' : 'x', { size: 13, color: '#fff', stroke: 3.4 });
+    root.classList.add(
+      'ds-morph--committed', isCorrect ? 'ds-morph--correct' : 'ds-morph--wrong',
+      'ds-morph--tinted', 'ds-morph--morphed', 'ds-morph--unfolded', 'ds-morph--recap',
+    );
+    area.querySelector('#submit-btn').addEventListener('click', () => resolve());
+    onCardTap(root, () => resolve());
+  });
+}
+
 // --- Tests d'usage ---------------------------------------------------------
 
 // Tests d'usage posés à cette révision du mot : un par manière, en rotation sur le nombre de
@@ -851,28 +1079,37 @@ function usageStepsFor(item) {
   return pickUsageTests(parseUsageTests(item.usage_tests), item.total_reviews);
 }
 
-// Un test d'usage dans le circuit normal : un trou se rejoue jusqu'à la bonne réponse comme
-// les autres questions (seule la 1re tentative compte), un placement se joue une fois.
-async function askUsageTest(container, item, { test }, { index, total, badge, forceRetry, options }) {
+// Un test d'usage dans le circuit normal : un trou se rejoue, sans indice (la bonne réponse
+// vient d'être montrée), jusqu'à la bonne réponse — seule la 1re tentative compte ; un
+// placement ou un type de mot se joue une fois. `rule` : règle d'usage à montrer sur une
+// carte ratée (dernière question du mot seulement).
+async function askUsageTest(container, item, { test }, { index, total, badge, forceRetry, options, rule = '' }) {
+  const remaining = Math.max(0, total - index - 1);
   if (test.kind === 'gap') {
-    return askUntilCorrect(container, item, {
-      instruction: 'Complète la phrase',
-      question: gapQuestion(test),
-      questionSentence: true,
-      expected: test.answers[0],
-      solution: gapSolution(test),
-      usage: item.usage,
-      index, total, badge, forceRetry, options,
-      checkFn: (answer) => checkGap(test, answer),
-    });
+    let first = null;
+    for (let attempt = 0; ; attempt += 1) {
+      const currentAttempt = attempt;
+      const result = await gapCard(container, {
+        test, rule, badge, remaining,
+        retry: forceRetry || attempt > 0,
+        label: attempt > 0 ? 'Deuxième tentative' : (forceRetry ? 'Mot déjà raté' : 'Complète la phrase'),
+        // La faute est déjà barrée dans la phrase : sous la carte, seul le changement de niveau
+        // (s'il y en a un) reste à montrer.
+        getConsequence: (answer, isCorrect) => (!isCorrect && currentAttempt === 0 ? failureConsequence(item, '', options) : null),
+      });
+      if (result.skipped) throw new ItemSkipped();
+      if (first === null) first = result.isCorrect;
+      if (result.isCorrect) return first;
+    }
   }
-  const result = await choiceCard(container, {
+  const card = test.kind === 'type' ? typeCard : choiceCard;
+  const result = await card(container, {
     word: item.en_base,
     test,
-    usage: item.usage,
+    rule,
     badge,
     retry: forceRetry,
-    remaining: Math.max(0, total - index - 1),
+    remaining,
     getConsequence: (isCorrect) => (isCorrect ? null : failureConsequence(item, '', options)),
   });
   if (result.skipped) throw new ItemSkipped();
@@ -921,7 +1158,7 @@ function failureConsequence(item, answer, { preserveSchedule = false } = {}) {
 // entraînement affiché à l'écran, sous la forme d'une carte « deuxième tentative ».
 async function askUntilCorrect(container, item, {
   instruction, question, expected, pos, example, registre, sens, usage, sensHint, index, total, badge, forceRetry, options, checkFn,
-  questionRegion, answerRegion, promptRegion, questionSentence = false, solution,
+  questionRegion, answerRegion, promptRegion, questionSentence = false, translation,
 }) {
   let first = null;
   let attempt = 0;
@@ -945,8 +1182,9 @@ async function askUntilCorrect(container, item, {
       checkFn,
       answer: expected,
       pos,
-      // Un test d'usage montre en corrigé la phrase complète plutôt que « question = réponse ».
-      translation: solution ?? `${question} = ${expected}`,
+      // Bandeau : le français seul. Par défaut la question (posée en français) ; la carte des
+      // formes passées, posée sur le mot anglais, passe le français du mot.
+      translation: translation ?? question,
       registre,
       sens,
       usage,
@@ -956,7 +1194,9 @@ async function askUntilCorrect(container, item, {
       answerRegion,
       promptRegion,
       questionSentence,
-      getConsequence: (answer, isCorrect) => (!isCorrect && currentAttempt === 0 ? failureConsequence(item, answer, options) : null),
+      // La faute est déjà barrée dans la carte (« Ta réponse ») : sous la carte, seul le
+      // changement de niveau reste à montrer.
+      getConsequence: (answer, isCorrect) => (!isCorrect && currentAttempt === 0 ? failureConsequence(item, '', options) : null),
     });
     if (result.skipped) throw new ItemSkipped();
     const { isCorrect } = result;
@@ -970,17 +1210,18 @@ async function askUntilCorrect(container, item, {
 async function runVocabQuestion(container, item, { index, total, badge, options, forceRetry, tally, markResult }) {
   const before = getProgressRow(item.item_type, item.item_key);
   const usageSteps = usageStepsFor(item);
+  // Des questions d'usage suivent : traduction et formes ne montrent ni la règle ni l'exemple
+  // (ils donneraient leurs réponses) ; la fiche complète se déplie sous la dernière.
+  const example = usageSteps.length ? null : item.example;
 
   const baseCorrect = await askUntilCorrect(container, item, {
     instruction: 'Traduis en anglais',
     question: item.prompt,
     expected: item.en_base,
     pos: item.type,
-    example: item.example,
+    example,
     registre: item.registre,
     sens: item.sens,
-    // Des tests d'usage suivent : la règle n'apparaît qu'avec leur corrigé, sinon elle
-    // donnerait la réponse juste avant la question.
     usage: usageSteps.length ? null : item.usage,
     sensHint: item.sens,
     answerRegion: item.region,
@@ -994,9 +1235,10 @@ async function runVocabQuestion(container, item, { index, total, badge, options,
     conjugationCorrect = await askUntilCorrect(container, item, {
       instruction: 'Passé simple / participe passé',
       question: item.en_base,
+      translation: item.prompt,
       expected: `${item.en_past_simple} / ${item.en_past_participle}`,
       pos: item.type,
-      example: item.example,
+      example,
       questionRegion: item.region,
       index, total, badge, forceRetry, options,
       checkFn: (answer) => checkConjugation(item, answer),
@@ -1006,14 +1248,17 @@ async function runVocabQuestion(container, item, { index, total, badge, options,
   // Tous les tests d'usage sont posés même après un échec : chacun est un entraînement utile,
   // et la note (une seule par mot) attend de toute façon la fin du circuit.
   let usageCorrect = true;
-  for (const step of usageSteps) {
-    const ok = await askUsageTest(container, item, step, { index, total, badge, forceRetry, options });
+  for (const [i, step] of usageSteps.entries()) {
+    const rule = i === usageSteps.length - 1 ? usageRuleHtml(item.usage) : '';
+    const ok = await askUsageTest(container, item, step, { index, total, badge, forceRetry, options, rule });
     usageCorrect = usageCorrect && ok;
   }
 
   // Comme les formes passées : le mot n'est réussi que si tout le circuit l'est.
   await finalizeVocabItem(item, baseCorrect, conjugationCorrect && usageCorrect, options);
   const correct = baseCorrect && conjugationCorrect && usageCorrect;
+  // Après la dernière question d'usage, la carte réponse complète du mot (masquée jusque-là).
+  if (usageSteps.length) await wordCard(container, item, correct, { remaining: Math.max(0, total - index - 1) });
   recordOutcome(tally, before, getProgressRow(item.item_type, item.item_key), correct);
   markResult?.(index, correct);
 }
@@ -1143,6 +1388,7 @@ async function runHardModeRound(container, item, targetPhase, tally) {
     const followUps = targetPhase === 3 && item.item_type === 'vocabulaire'
       ? [...(item.en_past_simple ? [{ forms: true }] : []), ...usageStepsFor(item)]
       : [];
+    const hasUsage = followUps.some((step) => step.test);
 
     // Note une tentative de phase complète (base, plus formes passées le cas échéant) : une
     // seule entrée au bilan et une seule notation Leitner par tentative.
@@ -1174,11 +1420,12 @@ async function runHardModeRound(container, item, targetPhase, tally) {
       // elle-même ne bouge pas — pas de pastille de transition, juste la réponse barrée.
       if (graded.cappedToday) {
         outcome = { done: true };
-        return { wrongAnswer: answer.trim() || null };
+        return { wrongAnswer: null };
       }
       const demoted = demotedPhase(targetPhase, item.item_type);
       outcome = demoted !== targetPhase ? { done: false, newPhase: demoted } : { loop: true };
-      return { wrongAnswer: answer.trim() || null, before: `Phase ${targetPhase}`, after: `Phase ${demoted}` };
+      // La faute est déjà barrée dans la carte : seule la transition de phase reste dessous.
+      return { wrongAnswer: null, before: `Phase ${targetPhase}`, after: `Phase ${demoted}` };
     };
 
     const result = await morphCard(container, {
@@ -1195,37 +1442,46 @@ async function runHardModeRound(container, item, targetPhase, tally) {
       pos,
       registre: item.registre,
       sens: item.sens,
-      // Règle masquée ici quand des tests d'usage suivent : elle donnerait leur réponse.
-      usage: followUps.some((step) => step.test) ? null : item.usage,
-      translation: `${question} = ${expected}`,
-      example: item.example || item.explication,
+      // Règle et exemple masqués quand des questions d'usage suivent (comme dans le circuit
+      // normal) : ils donneraient leurs réponses. La fiche complète se déplie sous la dernière.
+      usage: hasUsage ? null : item.usage,
+      // Français seul ; en phase 1 la réponse attendue est le français, déjà en haut de la carte.
+      translation: targetPhase === 1 ? '' : question,
+      example: hasUsage ? null : (item.example || item.explication),
       checkFn,
       getConsequence: async (answer, isCorrect) => {
-        // Une base juste ne suffit pas à sortir quand des cartes de suite restent : la note
-        // attend la dernière d'entre elles (comme finalizeVocabItem dans le circuit normal).
-        if (isCorrect && followUps.length) return null;
+        // Des cartes de suite restent : la note attend la dernière d'entre elles, juste ou
+        // fausse (comme finalizeVocabItem dans le circuit normal).
+        if (followUps.length) return null;
         return gradeRound(answer, isCorrect);
       },
     });
     if (result.skipped) throw new ItemSkipped();
 
-    // Une seule notation par tentative de phase : le premier échec la porte (et arrête la
-    // série), sinon c'est la dernière carte, réussie, qui la déclenche.
-    if (followUps.length && result.isCorrect) {
-      for (let i = 0; i < followUps.length; i += 1) {
-        const last = i === followUps.length - 1;
-        const consequence = (answer, ok) => (!ok || last ? gradeRound(answer, ok) : null);
-        const ok = await runHardFollowUp(container, item, followUps[i], pos, consequence);
-        if (!ok) break;
-      }
+    // Même ordre que le circuit normal : toutes les cartes de suite sont posées, même après
+    // une erreur, une seule fois chacune (pas de 2e tentative en mode compliqué). Une seule
+    // notation par tentative de phase, portée par la dernière carte : la phase n'est réussie
+    // que si tout est juste. La réponse barrée n'est montrée que si cette dernière carte est
+    // elle-même fausse.
+    let allCorrect = result.isCorrect;
+    for (let i = 0; i < followUps.length; i += 1) {
+      const last = i === followUps.length - 1;
+      const consequence = (answer, ok) => {
+        if (!last) return null;
+        return gradeRound(ok ? '' : answer, allCorrect && ok);
+      };
+      const rule = last && followUps[i].test ? usageRuleHtml(item.usage) : '';
+      const ok = await runHardFollowUp(container, item, followUps[i], pos, consequence, rule);
+      allCorrect = allCorrect && ok;
     }
+    if (hasUsage) await wordCard(container, item, allCorrect);
     if (!outcome.loop) return outcome;
   }
 }
 
 // Une carte de suite en phase 3 du mode compliqué (formes passées ou test d'usage), jouée une
 // fois : `consequence(answer, isCorrect)` décide de la notation et de ce qui s'affiche.
-async function runHardFollowUp(container, item, step, pos, consequence) {
+async function runHardFollowUp(container, item, step, pos, consequence, rule = '') {
   let result;
   if (step.forms) {
     const formsExpected = `${item.en_past_simple} / ${item.en_past_participle}`;
@@ -1235,27 +1491,20 @@ async function runHardFollowUp(container, item, step, pos, consequence) {
       questionRegion: item.region,
       answer: formsExpected,
       pos,
-      translation: `${item.en_base} = ${formsExpected}`,
-      example: item.example,
+      translation: item.prompt,
+      example: usageStepsFor(item).length ? null : item.example,
       checkFn: (answer) => checkConjugation(item, answer),
       getConsequence: consequence,
     });
   } else if (step.test.kind === 'gap') {
-    result = await morphCard(container, {
-      instruction: 'Complète la phrase',
-      question: gapQuestion(step.test),
-      questionSentence: true,
-      answer: step.test.answers[0],
-      translation: gapSolution(step.test),
-      usage: item.usage,
-      checkFn: (answer) => checkGap(step.test, answer),
-      getConsequence: consequence,
-    });
+    // Faute déjà barrée dans la phrase : la conséquence ne garde que le changement de phase.
+    result = await gapCard(container, { test: step.test, rule, getConsequence: (answer, isCorrect) => consequence('', isCorrect) });
   } else {
-    result = await choiceCard(container, {
+    const card = step.test.kind === 'type' ? typeCard : choiceCard;
+    result = await card(container, {
       word: item.en_base,
       test: step.test,
-      usage: item.usage,
+      rule,
       getConsequence: (isCorrect) => consequence('', isCorrect),
     });
   }

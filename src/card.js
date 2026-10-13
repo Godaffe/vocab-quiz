@@ -84,7 +84,7 @@ export function flipCardHtml({ word, pos, example, translation, registre, sens, 
           ${example ? `
           <div class="ds-example--tab">
             <span class="ds-example__tab">Exemple</span>
-            <div class="ds-example__text">${escapeHtml(example)}</div>
+            <div class="ds-example__text">${exampleHtml(example)}</div>
           </div>` : ''}
           <div class="ds-flip__fill"></div>
           <div class="ds-flip__foot">${escapeHtml(foot)}</div>
@@ -151,16 +151,24 @@ function fieldCardHtml(label, text, variant) {
   `;
 }
 
-// Fait ressortir le premier mot de la réponse attendue dans l'exemple, en gras et coloré
-// selon le verdict — le reste du texte reste en italique ordinaire. Les réponses à plusieurs
-// mots ne mettent en évidence que le premier : au-delà, l'exemple resterait ambigu à repérer.
-function highlightAnswer(text, answer) {
-  const escaped = escapeHtml(text);
-  const firstWord = String(answer ?? '').trim().split(/\s+/)[0];
-  if (!firstWord) return escaped;
-  const escapedWord = escapeHtml(firstWord).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const re = new RegExp(`\\b(${escapedWord})\\b`, 'i');
-  return escaped.replace(re, '<span class="ds-result__hl">$1</span>');
+// Exemples du classeur (colonne « Exemple en En ») : « **mot** » = gras en couleur (le mot
+// appris), « __mot__ » = souligné (élément de la règle d'usage), combinables (« __**to**__ »).
+// Les symboles disparaissent à l'affichage. Un exemple sans symbole reste du texte simple :
+// l'appli ne devine plus le mot à mettre en gras (choix d'Anto du 13/10 : pas de gras plutôt
+// qu'un gras faux). Un symbole resté ouvert agit jusqu'à la fin du texte.
+export function exampleHtml(text) {
+  let bold = false;
+  let under = false;
+  let html = '';
+  for (const part of String(text ?? '').split(/(\*\*|__)/)) {
+    if (part === '**') bold = !bold;
+    else if (part === '__') under = !under;
+    else if (part) {
+      const cls = [bold && 'ds-result__hl', under && 'ds-result__ul'].filter(Boolean).join(' ');
+      html += cls ? `<span class="${cls}">${escapeHtml(part)}</span>` : escapeHtml(part);
+    }
+  }
+  return html;
 }
 
 export function answerFieldHtml({ placeholder = 'Ta réponse' } = {}) {
@@ -179,7 +187,7 @@ export function answerFieldHtml({ placeholder = 'Ta réponse' } = {}) {
 export function morphCardHtml({
   instruction, question, badge = '', hint = '', retry = false, retryLabel = 'Deuxième tentative',
   answer = '', pos = '', translation = '', example = '', registre, sens, usage, sensHint = '',
-  questionRegion = '', answerRegion = '', promptRegion = '', questionSentence = false,
+  questionRegion = '', answerRegion = '', promptRegion = '', questionSentence = false, forms = '',
 }) {
   return `
     <div class="ds-morph${retry ? ' ds-morph--retry' : ''}" id="morph-card">
@@ -219,14 +227,15 @@ export function morphCardHtml({
             <div class="ds-morph__answerrows">
               <div class="ds-morph__answerclip">${withRegion(`<div class="ds-result__answer" style="padding-top:6px">${escapeHtml(answer)}</div>`, answerRegion)}</div>
             </div>
+            ${forms ? `<div class="ds-morph__forms">${escapeHtml(forms)}</div>` : ''}
           </div>
         </div>
       </div>
       <div class="ds-morph__blocksrows">
         <div class="ds-morph__blocksclip">
-          ${translation ? `
+          ${(translation || sens) ? `
           <div class="ds-result__translation" id="m-translation">
-            <div class="ds-result__blockvalue">${escapeHtml(translation)}</div>
+            ${translation ? `<div class="ds-result__blockvalue">${escapeHtml(translation)}</div>` : ''}
             ${sens ? `<div class="ds-result__sens">${escapeHtml(sens)}</div>` : ''}
           </div>` : ''}
           ${usage ? `
@@ -235,7 +244,7 @@ export function morphCardHtml({
           </div>` : ''}
           ${example ? `
           <div class="ds-result__example">
-            <div class="ds-result__blockvalue">${highlightAnswer(example, answer)}</div>
+            <div class="ds-result__blockvalue">${exampleHtml(example)}</div>
           </div>` : ''}
         </div>
       </div>
@@ -243,11 +252,35 @@ export function morphCardHtml({
   `;
 }
 
+// Règle d'usage sous le corrigé d'une carte d'usage ratée — seulement sur la dernière question
+// du mot : plus tôt, elle donnerait la réponse des suivantes (choix d'Anto du 13/10).
+export function usageRuleHtml(usage) {
+  if (!usage) return '';
+  return `<div class="ds-result__usage"><div class="ds-result__blockvalue">${escapeHtml(usage)}</div></div>`;
+}
+
+// Carte phrase à trous (tests d'usage) : même gabarit compact que les cartes de placement et
+// type de mot. La phrase avec « ___ » (et l'indice entre parenthèses s'il y en a un), le champ
+// de saisie dessous. Au corrigé, le trou laisse place à la réponse dans la phrase : en vert si
+// juste, sinon la saisie barrée suivie de la bonne réponse (voir gapCard dans ui.js).
+export function gapCardHtml({ before, after, hint, badge = '', label = 'Complète la phrase', retry = false, rule = '' }) {
+  const blank = `<span class="ds-gap__slot" id="gap-slot">___${hint ? ` (${escapeHtml(hint)})` : ''}</span>`;
+  return `
+    <div class="ds-choice ds-gap${retry ? ' ds-choice--retry' : ''}" id="gap-card">
+      <div class="ds-prompt">${escapeHtml(label)}</div>
+      ${badge}
+      <div class="ds-gap__sentence">${escapeHtml(before)} ${blank} ${escapeHtml(after)}</div>
+      <div class="ds-gap__field">${answerFieldHtml()}</div>
+      ${rule ? `<div class="ds-choice__rule" hidden>${rule}</div>` : ''}
+    </div>
+  `;
+}
+
 // Carte de placement (tests d'usage) : le mot à placer, puis des phrases complètes à cocher —
 // une ou plusieurs, toujours, même quand une seule est juste, pour que l'interface ne trahisse
 // pas le nombre de bonnes réponses. Après validation, chaque phrase prend sa teinte (voir
-// runChoiceCard dans ui.js) et la règle d'usage se déplie sous la liste.
-export function choiceCardHtml({ word, options, badge = '', retry = false, usage = '' }) {
+// choiceCard dans ui.js) ; ratée et dernière question du mot, la règle d'usage s'affiche dessous.
+export function choiceCardHtml({ word, options, badge = '', retry = false, rule = '' }) {
   const items = options.map((option, i) => `
     <button type="button" class="ds-choice__opt" data-i="${i}" aria-pressed="false">
       <span class="ds-choice__box"></span>
@@ -255,12 +288,57 @@ export function choiceCardHtml({ word, options, badge = '', retry = false, usage
     </button>`).join('');
   return `
     <div class="ds-choice${retry ? ' ds-choice--retry' : ''}" id="choice-card">
-      <div class="ds-prompt">${retry ? 'Mot déjà raté' : 'Où placer'}</div>
+      <div class="ds-prompt">${retry ? 'Mot déjà raté' : 'Quelle phrase est correcte ?'}</div>
       ${badge}
       <div class="ds-choice__word">${escapeHtml(word)}</div>
       <div class="ds-choice__help">Coche la ou les phrases correctes</div>
       <div class="ds-choice__list">${items}</div>
-      ${usage ? `<div class="ds-choice__usage" hidden><div class="ds-result__blockvalue">${escapeHtml(usage)}</div></div>` : ''}
+      ${rule ? `<div class="ds-choice__rule" hidden>${rule}</div>` : ''}
+    </div>
+  `;
+}
+
+// Carte type de mot (tests d'usage) : la règle brute avec des cases vides (« ask after + [ ] »),
+// puis les boutons de types. On touche une case pour la rendre active, puis les types qui
+// vont dedans (un 2e appui retire le type). Ni exemple ni règle avant la validation (voir
+// typeCard dans ui.js).
+export function typeSlotHtml(index, chips = '', active = false) {
+  return `<button type="button" class="ds-type__slot${active ? ' ds-type__slot--active' : ''}" data-s="${index}"
+    aria-label="Case ${index + 1}" aria-pressed="${active}"><span class="ds-type__chips">${chips}</span></button>`;
+}
+
+export function typeChipHtml(type, variant = '') {
+  return `<span class="ds-type__chip${variant ? ` ds-type__chip--${variant}` : ''}">${escapeHtml(type)}</span>`;
+}
+
+export function typeCardHtml({ parts, buttons, badge = '', retry = false, rule = '' }) {
+  // Chaque case reste collée au texte qui la précède (« + lest + [ ] ») et le texte final à la
+  // dernière case (« [ ] + as ») : le retour à la ligne ne laisse jamais un « + » orphelin.
+  let slot = 0;
+  const groups = [];
+  let pending = '';
+  for (const part of parts) {
+    if (!part.slot) {
+      const text = `<span class="ds-type__text">${escapeHtml(part.text)}</span>`;
+      if (slot > 0 && part === parts[parts.length - 1]) groups[groups.length - 1] += text;
+      else pending += text;
+      continue;
+    }
+    const index = slot++;
+    groups.push(pending + typeSlotHtml(index, '', index === 0));
+    pending = '';
+  }
+  const ruleLine = groups.map((g) => `<span class="ds-type__group">${g}</span>`).join('');
+  const items = buttons.map((type) => `
+    <button type="button" class="ds-type__btn" data-t="${escapeHtml(type)}" aria-pressed="false">${escapeHtml(type)}</button>`).join('');
+  return `
+    <div class="ds-choice ds-type${retry ? ' ds-choice--retry' : ''}" id="type-card">
+      <div class="ds-prompt">${retry ? 'Mot déjà raté' : 'Complète la règle'}</div>
+      ${badge}
+      <div class="ds-type__rule">${ruleLine}</div>
+      <div class="ds-choice__help">${slot > 1 ? 'Touche une case, puis le ou les types de mots qui vont dedans' : 'Choisis le ou les types de mots qui vont dans la case'}</div>
+      <div class="ds-type__btns">${items}</div>
+      ${rule ? `<div class="ds-choice__rule" hidden>${rule}</div>` : ''}
     </div>
   `;
 }
