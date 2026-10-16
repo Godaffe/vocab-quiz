@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { get, run, save } from './db.js';
+import { all, get, run, save } from './db.js';
 
 export function parseIrregularVerb(enText) {
   const text = String(enText ?? '').trim();
@@ -75,10 +75,36 @@ function fieldsDiffer(existing, fields, columns) {
   return columns.some((col) => (existing[col] ?? null) !== (fields[col] ?? null));
 }
 
-export async function importFromWorkbook(workbook, todayISO) {
+// Éléments en base dont l'ID n'existe plus dans leur feuille Excel. Une ligne avec un ID non vide
+// compte comme présente même si elle est incomplète. Feuille introuvable ou sans aucun ID :
+// rien n'est signalé pour cette table, pour ne jamais tout supprimer par erreur.
+export function findMissingItems(workbook) {
+  const missing = [];
+  for (const cfg of SHEETS) {
+    const sheetName = findSheetName(workbook, cfg.candidates);
+    if (!sheetName) continue;
+    const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
+    const ids = new Set(rows.map((row) => String(row.ID ?? '').trim()).filter((id) => id !== ''));
+    if (ids.size === 0) continue;
+    for (const item of all(`SELECT key, en FROM ${cfg.table}`)) {
+      if (!ids.has(item.key)) missing.push({ table: cfg.table, key: item.key, label: item.en });
+    }
+  }
+  return missing;
+}
+
+export async function importFromWorkbook(workbook, todayISO, { deleteMissing = false } = {}) {
   const summary = {};
   for (const cfg of SHEETS) {
-    summary[cfg.table] = { new: 0, updated: 0, unchanged: 0, skipped: 0, duplicateId: [], sheetFound: false };
+    summary[cfg.table] = { new: 0, updated: 0, unchanged: 0, skipped: 0, deleted: 0, duplicateId: [], sheetFound: false };
+  }
+
+  if (deleteMissing) {
+    for (const { table, key } of findMissingItems(workbook)) {
+      run(`DELETE FROM ${table} WHERE key = ?`, [key]);
+      run('DELETE FROM progress WHERE item_type = ? AND item_key = ?', [table, key]);
+      summary[table].deleted++;
+    }
   }
 
   for (const cfg of SHEETS) {

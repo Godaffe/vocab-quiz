@@ -1,4 +1,4 @@
-import { parseWorkbookFile, importFromWorkbook } from './importer.js';
+import { parseWorkbookFile, importFromWorkbook, findMissingItems } from './importer.js';
 import {
   startSession, checkBase, checkConjugation, finalizeVocabItem, checkAnswer, finalizeItem,
   checkReverse, gradeHardAttempt,
@@ -1891,7 +1891,8 @@ export function renderProgress(container) {
 function importSummaryLine(label, s) {
   if (!s.sheetFound) return `${label} : feuille introuvable`;
   const dup = s.duplicateId.length ? ` · ${s.duplicateId.length} ID en double ignorés` : '';
-  return `${label} : ${s.new} nouveau(x) · ${s.updated} mis à jour · ${s.skipped} ignorée(s)${dup}`;
+  const del = s.deleted ? ` · ${s.deleted} supprimé(s)` : '';
+  return `${label} : ${s.new} nouveau(x) · ${s.updated} mis à jour · ${s.skipped} ignorée(s)${del}${dup}`;
 }
 
 function toastHtml(tone, message, withIcon) {
@@ -1976,7 +1977,24 @@ export function renderSettings(container) {
     try {
       const buffer = await file.arrayBuffer();
       const workbook = parseWorkbookFile(buffer);
-      const summary = await importFromWorkbook(workbook, todayISO());
+      // Un ID disparu de l'Excel : on supprime l'élément et sa progression, mais seulement après accord.
+      const missing = findMissingItems(workbook);
+      if (missing.length) {
+        const n = missing.length;
+        const labels = missing.slice(0, 10).map((m) => m.label).join(', ');
+        const more = n > 10 ? ` et ${n - 10} autres` : '';
+        const ok = await confirmDialog({
+          title: n === 1 ? "Supprimer 1 mot absent de l'Excel ?" : `Supprimer ${n} mots absents de l'Excel ?`,
+          body: `${n === 1 ? 'Ce mot et toute sa progression seront supprimés' : 'Ces mots et toute leur progression seront supprimés'} définitivement : ${labels}${more}.`,
+          confirmLabel: 'Supprimer et importer',
+          cancelLabel: "Annuler l'import",
+        });
+        if (!ok) {
+          importSummary.innerHTML = '<div class="ds-alert ds-alert--warning">Import annulé</div>';
+          return;
+        }
+      }
+      const summary = await importFromWorkbook(workbook, todayISO(), { deleteMissing: missing.length > 0 });
       importSummary.innerHTML = [
         toastHtml('correct', importSummaryLine('Vocabulaire', summary.vocabulaire), true),
         toastHtml('correct', importSummaryLine('Grammaire', summary.grammaire), true),
