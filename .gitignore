@@ -31,3 +31,5 @@ dev-dist
 
 # Stray downloaded backups (from manual export testing)
 *.sqlite
+Liste de voc*.xlsx
+graphify-out/
