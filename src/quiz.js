@@ -9,7 +9,15 @@ export async function startSession() {
 }
 
 export function checkBase(item, answer) {
-  return answersMatchAny(answer, item.en_base);
+  // Nom allemand : l'article a sa propre carte, il est toléré mais pas exigé ici.
+  const typed = item.item_type === 'allemand' ? String(answer ?? '').trim().replace(/^(der|die|das)\s+/i, '') : answer;
+  return answersMatchAny(typed, item.en_base);
+}
+
+// Carte d'article (noms allemands) : der / die / das, au format des cartes de phrases à cocher.
+export const ARTICLES = ['der', 'die', 'das'];
+export function articleTest(item) {
+  return { kind: 'choice', options: ARTICLES.map((text) => ({ text, correct: text === item.genre })) };
 }
 
 export function checkConjugation(item, answer) {
@@ -20,7 +28,7 @@ export function checkConjugation(item, answer) {
 
 export async function finalizeVocabItem(item, baseCorrect, conjugationCorrect, options) {
   const isCorrect = baseCorrect && (conjugationCorrect ?? true);
-  await gradeAnswer('vocabulaire', item.item_key, isCorrect, todayISO(), options);
+  await gradeAnswer(item.item_type, item.item_key, isCorrect, todayISO(), options);
   return isCorrect;
 }
 

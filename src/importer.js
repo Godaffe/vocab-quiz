@@ -35,6 +35,33 @@ const SHEETS = [
     },
   },
   {
+    table: 'allemand',
+    candidates: ['VocAllemand'],
+    required: ['ID', 'Fr', 'All'],
+    label: 'de',
+    fields: ['fr', 'de', 'de_base', 'de_past_simple', 'de_past_participle', 'genre', 'pluriel', 'example', 'type', 'registre', 'sens', 'usage', 'usage_tests'],
+    mapRow(row) {
+      // Verbe fort : même format que les verbes irréguliers anglais, « sterben (starb / gestorben) ».
+      const { base, pastSimple, pastParticiple } = parseIrregularVerb(row.All);
+      const text = (col) => (row[col] ? String(row[col]).trim() : null);
+      return {
+        fr: String(row.Fr).trim(),
+        de: String(row.All).trim(),
+        de_base: base,
+        de_past_simple: pastSimple,
+        de_past_participle: pastParticiple,
+        genre: text('Genre')?.toLowerCase() ?? null,
+        pluriel: text('Pluriel'),
+        example: text('Exemple en All'),
+        type: text('Type'),
+        registre: text('Registre'),
+        sens: text('Sens'),
+        usage: text('Usage'),
+        usage_tests: text('Tests usage'),
+      };
+    },
+  },
+  {
     table: 'grammaire',
     candidates: ['Grammaire', 'Gammaire'],
     required: ['ID', 'Fr', 'En'],
@@ -86,8 +113,8 @@ export function findMissingItems(workbook) {
     const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
     const ids = new Set(rows.map((row) => String(row.ID ?? '').trim()).filter((id) => id !== ''));
     if (ids.size === 0) continue;
-    for (const item of all(`SELECT key, en FROM ${cfg.table}`)) {
-      if (!ids.has(item.key)) missing.push({ table: cfg.table, key: item.key, label: item.en });
+    for (const item of all(`SELECT key, ${cfg.label ?? 'en'} AS label FROM ${cfg.table}`)) {
+      if (!ids.has(item.key)) missing.push({ table: cfg.table, key: item.key, label: item.label });
     }
   }
   return missing;

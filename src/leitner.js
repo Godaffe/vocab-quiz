@@ -12,6 +12,15 @@ export function nextLevelOnIncorrect(level) {
   return Math.max(level - 1, 0);
 }
 
+// Langue active (réglage « langue », anglais par défaut) : chaque langue a ses propres tables,
+// sa progression, son quota de mots nouveaux et ses compteurs du jour. La série de jours reste
+// commune.
+const LANG_TABLES = { en: ['vocabulaire', 'grammaire', 'expressions'], de: ['allemand'] };
+export const currentLang = () => (getSetting('langue') === 'de' ? 'de' : 'en');
+const langTypeFilter = () => `item_type IN (${LANG_TABLES[currentLang()].map((t) => `'${t}'`).join(', ')})`;
+// Les clés anglaises gardent leur nom d'origine : les compteurs déjà enregistrés restent valables.
+const langKey = (key) => (currentLang() === 'en' ? key : `${key}_${currentLang()}`);
+
 function addDays(isoDate, days) {
   const d = new Date(`${isoDate}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + days);
@@ -46,7 +55,9 @@ export function getStreak(todayISO) {
 // Deltas du jour affichés sur l'accueil (« +N » à côté des totaux) : deux compteurs datés,
 // remis à zéro implicitement dès que la date stockée diffère d'aujourd'hui — même mécanique
 // que bumpStreak/getStreak, appelés depuis gradeAnswer au moment exact du franchissement.
-function bumpDailyCounter(counterKey, dateKey, todayISO) {
+function bumpDailyCounter(baseCounterKey, baseDateKey, todayISO) {
+  const counterKey = langKey(baseCounterKey);
+  const dateKey = langKey(baseDateKey);
   const day = getSetting(dateKey);
   const count = day === todayISO ? parseInt(getSetting(counterKey) ?? '0', 10) + 1 : 1;
   run(
@@ -59,7 +70,9 @@ function bumpDailyCounter(counterKey, dateKey, todayISO) {
   );
 }
 
-function getDailyCounter(counterKey, dateKey, todayISO) {
+function getDailyCounter(baseCounterKey, baseDateKey, todayISO) {
+  const counterKey = langKey(baseCounterKey);
+  const dateKey = langKey(baseDateKey);
   return getSetting(dateKey) === todayISO ? parseInt(getSetting(counterKey) ?? '0', 10) : 0;
 }
 
@@ -76,7 +89,7 @@ function scheduleRequeue(todayISO) {
   const capacity = parseInt(getSetting('new_items_per_day') ?? '10', 10);
   let date = addDays(todayISO, 1);
   while (true) {
-    const row = get('SELECT COUNT(*) as c FROM progress WHERE requeue_date = ?', [date]);
+    const row = get(`SELECT COUNT(*) as c FROM progress WHERE requeue_date = ? AND ${langTypeFilter()}`, [date]);
     if ((row?.c ?? 0) < capacity) return date;
     date = addDays(date, 1);
   }
@@ -229,25 +242,34 @@ function initialHardPhase(itemType) {
   return itemType === 'expressions' ? 2 : 1;
 }
 
-// All three branches must expose the same column list (SQLite UNION ALL requires matching
+// All branches must expose the same column list (SQLite UNION ALL requires matching
 // column counts) — unused fields per type are padded with NULL.
 const CONTENT_QUERIES = {
   vocabulaire: `SELECT 'vocabulaire' as item_type, key as item_key, fr as prompt, en_base, en_past_simple,
                        en_past_participle, example, type, NULL as explication, NULL as en, registre, sens, usage, usage_tests,
-                       region
+                       region, NULL as genre, NULL as pluriel
                 FROM vocabulaire`,
   grammaire: `SELECT 'grammaire' as item_type, key as item_key, fr as prompt, NULL as en_base, NULL as en_past_simple,
                      NULL as en_past_participle, NULL as example, NULL as type, explication, en,
-                     NULL as registre, NULL as sens, NULL as usage, NULL as usage_tests, NULL as region
+                     NULL as registre, NULL as sens, NULL as usage, NULL as usage_tests, NULL as region,
+                     NULL as genre, NULL as pluriel
               FROM grammaire`,
   expressions: `SELECT 'expressions' as item_type, key as item_key, meaning as prompt, NULL as en_base, NULL as en_past_simple,
                        NULL as en_past_participle, example, NULL as type, NULL as explication, en,
-                       NULL as registre, NULL as sens, NULL as usage, NULL as usage_tests, region
+                       NULL as registre, NULL as sens, NULL as usage, NULL as usage_tests, region,
+                       NULL as genre, NULL as pluriel
                 FROM expressions`,
+  // Mot allemand : mêmes colonnes que Voc (de_base joue le rôle d'en_base), plus l'article
+  // (genre) et le pluriel irrégulier.
+  allemand: `SELECT 'allemand' as item_type, key as item_key, fr as prompt, de_base as en_base,
+                    de_past_simple as en_past_simple, de_past_participle as en_past_participle, example, type,
+                    NULL as explication, NULL as en, registre, sens, usage, usage_tests, NULL as region, genre, pluriel
+             FROM allemand`,
 };
 
 function unionAll(clause) {
-  return Object.values(CONTENT_QUERIES)
+  return LANG_TABLES[currentLang()]
+    .map((table) => CONTENT_QUERIES[table])
     .map((q) => `SELECT * FROM (${q}) JOIN progress USING (item_type, item_key) WHERE ${clause}`)
     .join(' UNION ALL ');
 }
@@ -260,7 +282,7 @@ export function getDueItems(todayISO) {
 
 export function countNewIntroducedToday(todayISO) {
   const row = get(
-    "SELECT COUNT(*) as c FROM progress WHERE introduced_at = ? AND last_result = 'correct'",
+    `SELECT COUNT(*) as c FROM progress WHERE introduced_at = ? AND last_result = 'correct' AND ${langTypeFilter()}`,
     [todayISO]
   );
   return row ? row.c : 0;
@@ -329,7 +351,7 @@ export function getProgressRow(itemType, itemKey) {
 export function countReviewedToday(todayISO) {
   const [start, end] = localDayBoundsUTC(todayISO);
   const row = get(
-    "SELECT COUNT(*) as c FROM progress WHERE learning_process = 'normal' AND last_reviewed_at >= ? AND last_reviewed_at < ?",
+    `SELECT COUNT(*) as c FROM progress WHERE learning_process = 'normal' AND last_reviewed_at >= ? AND last_reviewed_at < ? AND ${langTypeFilter()}`,
     [start, end]
   );
   return row ? row.c : 0;

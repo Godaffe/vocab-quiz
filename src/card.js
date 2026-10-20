@@ -280,7 +280,11 @@ export function gapCardHtml({ before, after, hint, badge = '', label = 'Complèt
 // une ou plusieurs, toujours, même quand une seule est juste, pour que l'interface ne trahisse
 // pas le nombre de bonnes réponses. Après validation, chaque phrase prend sa teinte (voir
 // choiceCard dans ui.js) ; ratée et dernière question du mot, la règle d'usage s'affiche dessous.
-export function choiceCardHtml({ word, options, badge = '', retry = false, rule = '' }) {
+// `prompt` et `help` : la carte sert aussi au test d'article allemand (« Quel article ? »).
+export function choiceCardHtml({
+  word, options, badge = '', retry = false, rule = '',
+  prompt = 'Quelle phrase est correcte ?', help = 'Coche la ou les phrases correctes',
+}) {
   const items = options.map((option, i) => `
     <button type="button" class="ds-choice__opt" data-i="${i}" aria-pressed="false">
       <span class="ds-choice__box"></span>
@@ -288,10 +292,10 @@ export function choiceCardHtml({ word, options, badge = '', retry = false, rule 
     </button>`).join('');
   return `
     <div class="ds-choice${retry ? ' ds-choice--retry' : ''}" id="choice-card">
-      <div class="ds-prompt">${retry ? 'Mot déjà raté' : 'Quelle phrase est correcte ?'}</div>
+      <div class="ds-prompt">${retry ? 'Mot déjà raté' : escapeHtml(prompt)}</div>
       ${badge}
       <div class="ds-choice__word">${escapeHtml(word)}</div>
-      <div class="ds-choice__help">Coche la ou les phrases correctes</div>
+      <div class="ds-choice__help">${escapeHtml(help)}</div>
       <div class="ds-choice__list">${items}</div>
       ${rule ? `<div class="ds-choice__rule" hidden>${rule}</div>` : ''}
     </div>

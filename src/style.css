@@ -437,6 +437,15 @@ input[type="text"]:focus, input[type="number"]:focus {
 
 .stat-row { display: flex; gap: 12px; padding: 16px 0 0; }
 
+/* Choix de la langue sur l'accueil : deux options, celle active pleine. */
+.lang-switch { display: flex; gap: 4px; margin-top: 16px; padding: 4px; border-radius: 999px; background: var(--surface-sunken); }
+.lang-switch__opt {
+  flex: 1; min-height: 36px; border: 0; border-radius: 999px; background: transparent;
+  font: 600 14px/1 var(--font-ui); color: var(--text-muted); cursor: pointer;
+}
+.lang-switch__opt--on { background: var(--paper-high); color: var(--text-strong); box-shadow: 0 1px 2px rgba(33, 31, 20, .12); }
+.lang-switch__opt:focus-visible { outline: 2px solid var(--copper-500); outline-offset: 2px; }
+
 /* Pastille de stat : pile à trois couches (deux liserés décalés en dessous, le corps
    ink-500 au premier plan). Le décalage part vers l'intérieur de la paire pour lire comme
    un jeu de cartes commun aux deux pastilles. */

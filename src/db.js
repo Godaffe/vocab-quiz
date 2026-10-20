@@ -44,6 +44,27 @@ CREATE TABLE IF NOT EXISTS expressions (
   updated_at TEXT NOT NULL
 );
 
+-- Feuille VocAllemand : même rôle que vocabulaire. de_base/de_past_simple/de_past_participle
+-- = infinitif, Präteritum et Partizip II d'un verbe fort ; genre = der/die/das d'un nom.
+CREATE TABLE IF NOT EXISTS allemand (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  key TEXT NOT NULL UNIQUE,
+  fr TEXT NOT NULL,
+  de TEXT NOT NULL,
+  de_base TEXT NOT NULL,
+  de_past_simple TEXT,
+  de_past_participle TEXT,
+  genre TEXT,
+  pluriel TEXT,
+  example TEXT,
+  type TEXT,
+  registre TEXT,
+  sens TEXT,
+  usage TEXT,
+  usage_tests TEXT,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS progress (
   item_type TEXT NOT NULL,
   item_key TEXT NOT NULL,

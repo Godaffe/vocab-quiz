@@ -1,14 +1,14 @@
 import { parseWorkbookFile, importFromWorkbook, findMissingItems } from './importer.js';
 import {
   startSession, checkBase, checkConjugation, finalizeVocabItem, checkAnswer, finalizeItem,
-  checkReverse, gradeHardAttempt,
+  checkReverse, gradeHardAttempt, articleTest, ARTICLES,
 } from './quiz.js';
 import { getSetting, setSetting, resetDatabase } from './db.js';
 import { exportToFile, importFromFile, daysSince } from './backup.js';
 import {
   getAllProgress, advancedPhase, demotedPhase, getFailedWordsPool,
   getStreak, getLearnedCount, getInProgressCount, countNewIntroducedToday,
-  countReviewedToday, getProgressRow, getLearnedToday, getStartedToday,
+  countReviewedToday, getProgressRow, getLearnedToday, getStartedToday, currentLang,
 } from './leitner.js';
 import {
   escapeHtml, sessionHeaderHtml, barHtml, dotsProgressHtml, cardStackHtml, flipCardHtml, morphCardHtml, choiceCardHtml, typeCardHtml, typeChipHtml, usageRuleHtml, gapCardHtml,
@@ -22,6 +22,20 @@ import {
 } from './usageTests.js';
 import { noteOutcome, noteRelease, takeMoves, forgetMoves, playHomeMoves } from './moves.js';
 import { todayISO } from './dates.js';
+
+// Mot à traduire (Voc anglais ou VocAllemand) : mêmes cartes, mêmes règles. Le reste
+// (grammaire, expressions) n'existe qu'en anglais.
+const isWord = (item) => item.item_type === 'vocabulaire' || item.item_type === 'allemand';
+const translateInstruction = () => (currentLang() === 'de' ? 'Traduis en allemand' : 'Traduis en anglais');
+const formsInstruction = (item) => (item.item_type === 'allemand' ? 'Präteritum / Partizip II' : 'Passé simple / participe passé');
+// Nom allemand : l'article a sa carte, posée juste après la traduction.
+const hasArticleTest = (item) => item.item_type === 'allemand' && ARTICLES.includes(item.genre);
+const withArticle = (item) => (item.genre ? `${item.genre} ${item.en_base}` : item.en_base);
+// Sous le mot : formes d'un verbe fort/irrégulier, ou pluriel irrégulier d'un nom allemand.
+function wordExtras(item) {
+  if (item.en_past_simple) return `(${item.en_past_simple} / ${item.en_past_participle})`;
+  return item.pluriel ? `(Pl. ${item.pluriel})` : '';
+}
 
 const WEEKDAYS = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
 const MONTHS = [
@@ -347,13 +361,30 @@ export async function renderHome(container, { onStartHard, onStartLearning, onSt
   const shown = animating ? { ...prev, streak: stats.streak, burst: false } : { ...stats };
   lastHomeStats = { ...stats, burst: false };
 
+  const lang = currentLang();
   container.innerHTML = `
     <div class="home-header" id="home-header"></div>
     <div class="screen-scroll">
+      <div class="lang-switch" role="group" aria-label="Langue">
+        <button type="button" class="lang-switch__opt${lang === 'en' ? ' lang-switch__opt--on' : ''}" data-lang="en" aria-pressed="${lang === 'en'}">Anglais</button>
+        <button type="button" class="lang-switch__opt${lang === 'de' ? ' lang-switch__opt--on' : ''}" data-lang="de" aria-pressed="${lang === 'de'}">Allemand</button>
+      </div>
       <div class="stat-row" id="stat-row"></div>
       <div class="home-grid" id="home-grid"></div>
     </div>
   `;
+
+  // Changer de langue recharge l'accueil sur l'autre progression, sans rien rejouer : les
+  // chiffres d'avant appartiennent à l'autre langue.
+  container.querySelectorAll('.lang-switch__opt').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (btn.dataset.lang === lang) return;
+      await setSetting('langue', btn.dataset.lang);
+      lastHomeStats = null;
+      forgetMoves();
+      renderHome(container, { onStartHard, onStartLearning, onStartReview, onStartFailedWords });
+    });
+  });
 
   const paintHeader = (s) => {
     const header = container.querySelector('#home-header');
@@ -763,12 +794,14 @@ function morphCard(area, {
 // { isCorrect } une fois la correction vue (ou { skipped: true }), et `getConsequence(isCorrect)`
 // (attendue, peut être async) fournit la conséquence affichée sous la carte. Pas de deuxième
 // tentative : avec les bonnes phrases déjà colorées, recocher ne serait qu'une formalité.
-function choiceCard(area, { word, test, rule, badge, retry = false, remaining = 0, getConsequence }) {
+function choiceCard(area, { word, test, rule, badge, retry = false, remaining = 0, getConsequence, prompt, help, shuffle = true }) {
   return new Promise((resolve) => {
     // Ordre mélangé à chaque affichage : la bonne phrase ne tombe pas toujours au même rang.
-    const order = test.options.map((_, i) => i).sort(() => Math.random() - 0.5);
+    // Les articles gardent leur ordre habituel der / die / das.
+    const order = test.options.map((_, i) => i);
+    if (shuffle) order.sort(() => Math.random() - 0.5);
     const shown = order.map((i) => test.options[i]);
-    const card = choiceCardHtml({ word, options: shown, badge, retry, rule });
+    const card = choiceCardHtml({ word, options: shown, badge, retry, rule, prompt, help });
     area.innerHTML = `
       <div class="session-body">
         ${remaining > 0 ? cardStackHtml(remaining, card) : card}
@@ -1038,10 +1071,10 @@ function gapCard(area, { test, rule = '', badge, label, retry = false, remaining
 function wordCard(area, item, isCorrect, { remaining = 0 } = {}) {
   return new Promise((resolve) => {
     const card = morphCardHtml({
-      instruction: '', question: item.en_base, answer: item.en_base, pos: item.type,
+      instruction: '', question: withArticle(item), answer: withArticle(item), pos: item.type,
       // Le bandeau ne porte que le français ; les formes irrégulières se lisent sous le mot.
       translation: item.prompt, registre: item.registre, sens: item.sens,
-      forms: item.en_past_simple ? `(${item.en_past_simple} / ${item.en_past_participle})` : '',
+      forms: wordExtras(item),
       usage: item.usage, example: item.example, answerRegion: item.region,
     });
     area.innerHTML = `
@@ -1056,7 +1089,7 @@ function wordCard(area, item, isCorrect, { remaining = 0 } = {}) {
     area.querySelector('#answer-input').disabled = true;
     // Verdict juste : la carte à fusion affiche le mot dans la zone de saisie (comme une
     // réponse tapée) ; faux, il est dans la ligne « réponse attendue » et la zone reste vide.
-    area.querySelector('#m-typed').textContent = item.en_base;
+    area.querySelector('#m-typed').textContent = withArticle(item);
     if (!isCorrect) root.classList.add('ds-morph--recap-wrong');
     area.querySelector('#m-label').textContent = isCorrect ? 'Mot réussi' : 'Mot à revoir';
     area.querySelector('#m-disc').innerHTML = icon(isCorrect ? 'check' : 'x', { size: 13, color: '#fff', stroke: 3.4 });
@@ -1075,7 +1108,7 @@ function wordCard(area, item, isCorrect, { remaining = 0 } = {}) {
 // révisions déjà faites (spec : comptes-rendus/spec-tests-usage.md). Vide pour un mot sans
 // colonne « Tests usage » exploitable — il garde alors exactement ses questions habituelles.
 function usageStepsFor(item) {
-  if (item.item_type !== 'vocabulaire' || !item.usage_tests) return [];
+  if (!isWord(item) || !item.usage_tests) return [];
   return pickUsageTests(parseUsageTests(item.usage_tests), item.total_reviews);
 }
 
@@ -1116,13 +1149,22 @@ async function askUsageTest(container, item, { test }, { index, total, badge, fo
   return result.isCorrect;
 }
 
+// Carte d'article d'un nom allemand : der / die / das, une seule tentative (comme une carte
+// de phrases à cocher).
+async function askArticle(container, item, { badge, remaining = 0, retry = false, getConsequence }) {
+  const result = await choiceCard(container, {
+    word: item.en_base, test: articleTest(item), badge, retry, remaining,
+    prompt: 'Quel article ?', help: "Choisis l'article", getConsequence, shuffle: false,
+  });
+  if (result.skipped) throw new ItemSkipped();
+  return result.isCorrect;
+}
+
 // --- Passage de découverte -------------------------------------------------
 
 function discoverFields(item) {
-  if (item.item_type === 'vocabulaire') {
-    const word = item.en_past_simple
-      ? `${item.en_base} (${item.en_past_simple} / ${item.en_past_participle})`
-      : item.en_base;
+  if (isWord(item)) {
+    const word = [withArticle(item), wordExtras(item)].filter(Boolean).join(' ');
     return {
       word, pos: item.type, example: item.example, translation: item.prompt,
       registre: item.registre, sens: item.sens, usage: item.usage, region: item.region,
@@ -1210,19 +1252,21 @@ async function askUntilCorrect(container, item, {
 async function runVocabQuestion(container, item, { index, total, badge, options, forceRetry, tally, markResult }) {
   const before = getProgressRow(item.item_type, item.item_key);
   const usageSteps = usageStepsFor(item);
-  // Des questions d'usage suivent : traduction et formes ne montrent ni la règle ni l'exemple
-  // (ils donneraient leurs réponses) ; la fiche complète se déplie sous la dernière.
-  const example = usageSteps.length ? null : item.example;
+  const article = hasArticleTest(item);
+  // Des questions d'usage ou d'article suivent : traduction et formes ne montrent ni la règle
+  // ni l'exemple (ils donneraient leurs réponses) ; la fiche complète se déplie sous la dernière.
+  const followUps = usageSteps.length > 0 || article;
+  const example = followUps ? null : item.example;
 
   const baseCorrect = await askUntilCorrect(container, item, {
-    instruction: 'Traduis en anglais',
+    instruction: translateInstruction(),
     question: item.prompt,
     expected: item.en_base,
     pos: item.type,
     example,
     registre: item.registre,
     sens: item.sens,
-    usage: usageSteps.length ? null : item.usage,
+    usage: followUps ? null : item.usage,
     sensHint: item.sens,
     answerRegion: item.region,
     promptRegion: item.region,
@@ -1231,9 +1275,15 @@ async function runVocabQuestion(container, item, { index, total, badge, options,
   });
 
   let conjugationCorrect = true;
+  if (article) {
+    conjugationCorrect = await askArticle(container, item, {
+      badge, retry: forceRetry, remaining: Math.max(0, total - index - 1),
+      getConsequence: (isCorrect) => (isCorrect ? null : failureConsequence(item, '', options)),
+    });
+  }
   if (item.en_past_simple) {
-    conjugationCorrect = await askUntilCorrect(container, item, {
-      instruction: 'Passé simple / participe passé',
+    const formsCorrect = await askUntilCorrect(container, item, {
+      instruction: formsInstruction(item),
       question: item.en_base,
       translation: item.prompt,
       expected: `${item.en_past_simple} / ${item.en_past_participle}`,
@@ -1243,6 +1293,7 @@ async function runVocabQuestion(container, item, { index, total, badge, options,
       index, total, badge, forceRetry, options,
       checkFn: (answer) => checkConjugation(item, answer),
     });
+    conjugationCorrect = conjugationCorrect && formsCorrect;
   }
 
   // Tous les tests d'usage sont posés même après un échec : chacun est un entraînement utile,
@@ -1258,7 +1309,7 @@ async function runVocabQuestion(container, item, { index, total, badge, options,
   await finalizeVocabItem(item, baseCorrect, conjugationCorrect && usageCorrect, options);
   const correct = baseCorrect && conjugationCorrect && usageCorrect;
   // Après la dernière question d'usage, la carte réponse complète du mot (masquée jusque-là).
-  if (usageSteps.length) await wordCard(container, item, correct, { remaining: Math.max(0, total - index - 1) });
+  if (followUps) await wordCard(container, item, correct, { remaining: Math.max(0, total - index - 1) });
   recordOutcome(tally, before, getProgressRow(item.item_type, item.item_key), correct);
   markResult?.(index, correct);
 }
@@ -1298,7 +1349,7 @@ async function runExpressionQuestion(container, item, { index, total, badge, opt
 }
 
 async function runQuestion(container, item, ctx) {
-  if (item.item_type === 'vocabulaire') await runVocabQuestion(container, item, ctx);
+  if (isWord(item)) await runVocabQuestion(container, item, ctx);
   else if (item.item_type === 'grammaire') await runGrammaireQuestion(container, item, ctx);
   else if (item.item_type === 'expressions') await runExpressionQuestion(container, item, ctx);
 }
@@ -1308,15 +1359,15 @@ async function runQuestion(container, item, ctx) {
 // Phase 1: En -> Fr/sens, sans indice. Phase 2: Fr/sens -> En, avec indice masqué.
 // Phase 3: Fr/sens -> En, sans indice (la question du circuit normal).
 function hardModeQuestion(item, phase) {
-  const forwardExpected = item.item_type === 'vocabulaire' ? item.en_base : item.en;
-  const forwardCheck = item.item_type === 'vocabulaire'
+  const forwardExpected = isWord(item) ? item.en_base : item.en;
+  const forwardCheck = isWord(item)
     ? (answer) => checkBase(item, answer)
     : (answer) => checkAnswer(item, answer);
 
   if (phase === 1) {
     return {
       instruction: 'Traduis en français',
-      question: forwardExpected,
+      question: isWord(item) ? withArticle(item) : forwardExpected,
       expected: item.prompt,
       hint: '',
       questionRegion: item.region,
@@ -1325,7 +1376,7 @@ function hardModeQuestion(item, phase) {
   }
   if (phase === 2) {
     return {
-      instruction: 'Traduis en anglais',
+      instruction: translateInstruction(),
       question: item.prompt,
       expected: forwardExpected,
       hint: hintMaskHtml(forwardExpected),
@@ -1336,7 +1387,7 @@ function hardModeQuestion(item, phase) {
     };
   }
   return {
-    instruction: 'Traduis en anglais',
+    instruction: translateInstruction(),
     question: item.prompt,
     expected: forwardExpected,
     hint: '',
@@ -1355,7 +1406,7 @@ function phaseBadge(phase) {
 // 3 pour le vocabulaire (1->2->3->sortie), 2 pour la grammaire (1->3->sortie, la phase 2
 // n'existe pas pour elle) et pour les expressions (2->3->sortie, la phase 1 n'existe pas).
 function hardModeTotalSteps(itemType) {
-  return itemType === 'vocabulaire' ? 3 : 2;
+  return itemType === 'vocabulaire' || itemType === 'allemand' ? 3 : 2;
 }
 
 // Position (0-indexée) d'une phase dans le trajet de l'item, jusqu'à hardModeTotalSteps
@@ -1377,7 +1428,7 @@ async function runHardModeRound(container, item, targetPhase, tally) {
     const {
       instruction, question, expected, hint, sensHint, checkFn, questionRegion, answerRegion, promptRegion,
     } = hardModeQuestion(item, targetPhase);
-    const pos = item.item_type === 'vocabulaire' ? item.type : null;
+    const pos = isWord(item) ? item.type : null;
     // Rempli par getConsequence (elle seule connaît le verdict et le résultat de la notation
     // Leitner) puis lu une fois morphCard résolue — `loop: true` signale qu'il faut reposer la
     // même phase (déjà au plancher), sinon c'est la décision renvoyée par cette fonction.
@@ -1385,10 +1436,11 @@ async function runHardModeRound(container, item, targetPhase, tally) {
     // Phase 3 d'un mot de vocabulaire : la traduction juste ne suffit pas, les cartes de suite
     // (formes passées d'un verbe irrégulier, puis un test d'usage par manière) doivent toutes
     // l'être aussi — comme dans le circuit normal.
-    const followUps = targetPhase === 3 && item.item_type === 'vocabulaire'
-      ? [...(item.en_past_simple ? [{ forms: true }] : []), ...usageStepsFor(item)]
+    const followUps = targetPhase === 3 && isWord(item)
+      ? [...(hasArticleTest(item) ? [{ article: true }] : []), ...(item.en_past_simple ? [{ forms: true }] : []), ...usageStepsFor(item)]
       : [];
-    const hasUsage = followUps.some((step) => step.test);
+    // L'article se lit aussi dans l'exemple : même masquage que pour l'usage.
+    const hasUsage = followUps.some((step) => step.test || step.article);
 
     // Note une tentative de phase complète (base, plus formes passées le cas échéant) : une
     // seule entrée au bilan et une seule notation Leitner par tentative.
@@ -1482,17 +1534,18 @@ async function runHardModeRound(container, item, targetPhase, tally) {
 // Une carte de suite en phase 3 du mode compliqué (formes passées ou test d'usage), jouée une
 // fois : `consequence(answer, isCorrect)` décide de la notation et de ce qui s'affiche.
 async function runHardFollowUp(container, item, step, pos, consequence, rule = '') {
+  if (step.article) return askArticle(container, item, { getConsequence: (ok) => consequence('', ok) });
   let result;
   if (step.forms) {
     const formsExpected = `${item.en_past_simple} / ${item.en_past_participle}`;
     result = await morphCard(container, {
-      instruction: 'Passé simple / participe passé',
+      instruction: formsInstruction(item),
       question: item.en_base,
       questionRegion: item.region,
       answer: formsExpected,
       pos,
       translation: item.prompt,
-      example: usageStepsFor(item).length ? null : item.example,
+      example: usageStepsFor(item).length || hasArticleTest(item) ? null : item.example,
       checkFn: (answer) => checkConjugation(item, answer),
       getConsequence: consequence,
     });
@@ -1999,6 +2052,7 @@ export function renderSettings(container) {
         toastHtml('correct', importSummaryLine('Vocabulaire', summary.vocabulaire), true),
         toastHtml('correct', importSummaryLine('Grammaire', summary.grammaire), true),
         toastHtml('correct', importSummaryLine('Expressions', summary.expressions), true),
+        toastHtml('correct', importSummaryLine('Allemand', summary.allemand), true),
       ].join('');
     } catch (err) {
       importSummary.innerHTML = toastHtml('wrong', `Fichier illisible : ${err.message}`, false);

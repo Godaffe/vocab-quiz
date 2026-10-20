@@ -3,6 +3,8 @@ export function normalizeAnswer(str) {
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
+    // « ss » vaut « ß » (allemand) ; les trémas tombent déjà avec les accents ci-dessus.
+    .replace(/ß/g, 'ss')
     .replace(/[^\p{L}\p{N}\s]/gu, '')
     .replace(/\s+/g, ' ')
     .trim();
