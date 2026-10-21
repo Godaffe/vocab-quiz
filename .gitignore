@@ -33,3 +33,4 @@ dev-dist
 *.sqlite
 Liste de voc*.xlsx
 graphify-out/
+~$*
