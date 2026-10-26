@@ -194,52 +194,40 @@ export async function exitHardMode(itemType, itemKey, todayISO) {
 
 // Phase 1/2 attempts, and failed Phase 3 attempts, within the "mots compliqués" process.
 // A successful Phase 3 attempt is handled by exitHardMode instead, not this function.
+// Un échec sort le mot de la séance en cours et le renvoie à sa phase de départ : il ne
+// reviendra qu'à la prochaine séance de mots compliqués (même le jour même), en phase 1.
 export async function recordHardAttempt(itemType, itemKey, isCorrect, currentPhase, todayISO) {
   const row = get('SELECT * FROM progress WHERE item_type = ? AND item_key = ?', [itemType, itemKey]);
   if (!row) throw new Error(`No progress row for ${itemType}/${itemKey}`);
 
-  let hardPhase = currentPhase;
-  let hardFailuresToday = row.hard_failures_today;
-  let cappedToday = false;
-
-  if (isCorrect) {
-    hardPhase = advancedPhase(currentPhase, itemType);
-  } else {
-    hardFailuresToday += 1;
-    cappedToday = hardFailuresToday >= 9;
-    if (!cappedToday) hardPhase = demotedPhase(currentPhase, itemType);
-  }
+  const hardPhase = isCorrect ? advancedPhase(currentPhase) : initialHardPhase(itemType);
 
   run(
     `UPDATE progress SET
-       total_reviews = total_reviews + 1, last_reviewed_at = ?, last_result = ?,
-       hard_phase = ?, hard_failures_today = ?
+       total_reviews = total_reviews + 1, last_reviewed_at = ?, last_result = ?, hard_phase = ?
      WHERE item_type = ? AND item_key = ?`,
-    [new Date().toISOString(), isCorrect ? 'correct' : 'incorrect', hardPhase, hardFailuresToday, itemType, itemKey]
+    [new Date().toISOString(), isCorrect ? 'correct' : 'incorrect', hardPhase, itemType, itemKey]
   );
   bumpStreak(todayISO);
   await save();
 
-  return { hardFailuresToday, cappedToday };
+  return { hardPhase };
 }
 
-export function advancedPhase(currentPhase, itemType) {
-  if (currentPhase === 1) return itemType === 'grammaire' ? 3 : 2;
-  return 3; // phase 2 -> 3 (a phase-3 success exits the process via exitHardMode, not this fn)
+export function advancedPhase(currentPhase) {
+  return currentPhase === 1 ? 2 : 3; // a phase-3 success exits the process via exitHardMode, not this fn
 }
 
-// Les expressions n'ont pas de phase 1 (pas de sens En -> Fr pertinent à tester isolément) :
-// leur trajet est 2 -> 3 -> sortie, et un échec en phase 2 ou 3 ne redescend jamais sous 2.
-export function demotedPhase(currentPhase, itemType) {
-  if (itemType === 'expressions') return 2;
-  if (currentPhase === 3) return itemType === 'grammaire' ? 1 : 2;
-  return 1; // phase 1 or phase 2 failed -> (re)descend to phase 1
+// Phase de la question de rattrapage posée (non notée) après un échec : celle du dessous,
+// sans descendre sous la phase de départ — à la phase la plus basse, la même question.
+export function rescuePhase(currentPhase, itemType) {
+  return Math.max(currentPhase - 1, initialHardPhase(itemType));
 }
 
-// Phase de départ d'un item qui entre en mode compliqué : 2 pour les expressions (qui
-// sautent la phase 1), 1 pour tout le reste.
-function initialHardPhase(itemType) {
-  return itemType === 'expressions' ? 2 : 1;
+// Phase de départ d'un item en mode compliqué : 2 pour les expressions et la grammaire (qui
+// sautent la phase 1, trajet 2 -> 3 -> sortie), 1 pour les mots.
+export function initialHardPhase(itemType) {
+  return itemType === 'expressions' || itemType === 'grammaire' ? 2 : 1;
 }
 
 // All branches must expose the same column list (SQLite UNION ALL requires matching
@@ -305,20 +293,20 @@ export function getLearnedSample(n) {
   return shuffle(all(unionAll("is_learned = 1 AND learning_process = 'normal'"))).slice(0, n);
 }
 
-export async function getHardModeItems(todayISO) {
+// Pas de remise à zéro quotidienne : un mot garde sa phase d'une séance à l'autre (seul un
+// échec le renvoie à sa phase de départ). On corrige seulement une phase hors trajet — une
+// grammaire encore en phase 1 d'avant le trajet 2 -> 3, ou une phase manquante.
+export async function getHardModeItems() {
   const items = all(unionAll("learning_process = 'hard'"));
   let changed = false;
   for (const item of items) {
-    if (item.hard_session_date !== todayISO) {
-      const startPhase = initialHardPhase(item.item_type);
+    const startPhase = initialHardPhase(item.item_type);
+    if (![1, 2, 3].includes(item.hard_phase) || item.hard_phase < startPhase) {
       run(
-        `UPDATE progress SET hard_phase = ?, hard_failures_today = 0, hard_session_date = ?
-         WHERE item_type = ? AND item_key = ?`,
-        [startPhase, todayISO, item.item_type, item.item_key]
+        'UPDATE progress SET hard_phase = ? WHERE item_type = ? AND item_key = ?',
+        [startPhase, item.item_type, item.item_key]
       );
       item.hard_phase = startPhase;
-      item.hard_failures_today = 0;
-      item.hard_session_date = todayISO;
       changed = true;
     }
   }
@@ -380,7 +368,7 @@ export function getFailedWordsPool() {
 }
 
 export async function buildDailySession(newItemsPerDay, todayISO) {
-  const hardItems = await getHardModeItems(todayISO);
+  const hardItems = await getHardModeItems();
   const due = getDueItems(todayISO);
   const budget = Math.max(0, newItemsPerDay - countNewIntroducedToday(todayISO));
   const fresh = getNewItemsPool(budget, todayISO);

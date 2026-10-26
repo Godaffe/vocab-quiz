@@ -6,7 +6,7 @@ import {
 import { getSetting, setSetting, resetDatabase } from './db.js';
 import { exportToFile, importFromFile, daysSince } from './backup.js';
 import {
-  getAllProgress, advancedPhase, demotedPhase, getFailedWordsPool,
+  getAllProgress, advancedPhase, rescuePhase, initialHardPhase, getFailedWordsPool,
   getStreak, getLearnedCount, getInProgressCount, countNewIntroducedToday,
   countReviewedToday, getProgressRow, getLearnedToday, getStartedToday, currentLang,
 } from './leitner.js';
@@ -1415,131 +1415,153 @@ function phaseBadge(phase) {
 }
 
 // Nombre de franchissements de phase qu'un item doit réussir pour sortir du mode compliqué :
-// 3 pour le vocabulaire (1->2->3->sortie), 2 pour la grammaire (1->3->sortie, la phase 2
-// n'existe pas pour elle) et pour les expressions (2->3->sortie, la phase 1 n'existe pas).
+// 3 pour les mots (1->2->3->sortie), 2 pour la grammaire et les expressions (2->3->sortie,
+// pas de phase 1).
 function hardModeTotalSteps(itemType) {
   return itemType === 'vocabulaire' || itemType === 'allemand' ? 3 : 2;
 }
 
 // Position (0-indexée) d'une phase dans le trajet de l'item, jusqu'à hardModeTotalSteps
-// (= sorti). Sert à mesurer un plus-haut niveau atteint qui ne redescend jamais, même si
-// l'item lui-même redescend de phase après un échec.
+// (= sorti). Sert à mesurer l'avancée d'un item dans la séance pour la barre.
 function hardModeStepIndex(itemType, phase) {
-  if (itemType === 'grammaire') return phase === 1 ? 0 : 1;
-  if (itemType === 'expressions') return phase === 2 ? 0 : 1;
-  return phase - 1;
+  return phase - initialHardPhase(itemType);
 }
 
-// Interroge `item` à `targetPhase` jusqu'à ce qu'il quitte cette phase — en avançant
-// (succès), en sortant du processus (succès en phase 3 ou plafond d'échecs du jour), ou en
-// redescendant vers une autre phase. Rendre la main à chaque changement de phase est ce qui
+// Interroge `item` une fois à `targetPhase` — il avance (succès), sort du processus (succès
+// en phase 3), ou quitte la séance après un échec et la question de rattrapage, renvoyé à sa
+// phase de départ pour la prochaine séance. Rendre la main à chaque changement de phase est ce qui
 // permet à renderHardMode de grouper les items par phase plutôt que de faire parcourir tout
 // le trajet 1→2→3 à un item avant de passer au suivant.
 async function runHardModeRound(container, item, targetPhase, tally) {
-  while (true) {
-    const {
-      instruction, question, expected, hint, sensHint, checkFn, questionRegion, answerRegion, promptRegion,
-    } = hardModeQuestion(item, targetPhase);
-    const pos = isWord(item) ? item.type : null;
-    // Rempli par getConsequence (elle seule connaît le verdict et le résultat de la notation
-    // Leitner) puis lu une fois morphCard résolue — `loop: true` signale qu'il faut reposer la
-    // même phase (déjà au plancher), sinon c'est la décision renvoyée par cette fonction.
-    let outcome = null;
-    // Phase 3 d'un mot de vocabulaire : la traduction juste ne suffit pas, les cartes de suite
-    // (formes passées d'un verbe irrégulier, puis un test d'usage par manière) doivent toutes
-    // l'être aussi — comme dans le circuit normal.
-    const followUps = targetPhase === 3 && isWord(item)
-      ? [...(hasArticleTest(item) ? [{ article: true }] : []), ...(item.en_past_simple ? [{ forms: true }] : []), ...usageStepsFor(item)]
-      : [];
-    // L'article se lit aussi dans l'exemple : même masquage que pour l'usage.
-    const hasUsage = followUps.some((step) => step.test || step.article);
+  const {
+    instruction, question, expected, hint, sensHint, checkFn, questionRegion, answerRegion, promptRegion,
+  } = hardModeQuestion(item, targetPhase);
+  const pos = isWord(item) ? item.type : null;
+  // Rempli par getConsequence (elle seule connaît le verdict et le résultat de la notation
+  // Leitner) puis lu une fois morphCard résolue : c'est la décision renvoyée par cette
+  // fonction (`rescue` = phase de la question de rattrapage à poser avant de sortir le mot).
+  let outcome = null;
+  // Phase 3 d'un mot de vocabulaire : la traduction juste ne suffit pas, les cartes de suite
+  // (formes passées d'un verbe irrégulier, puis un test d'usage par manière) doivent toutes
+  // l'être aussi — comme dans le circuit normal.
+  const followUps = targetPhase === 3 && isWord(item)
+    ? [...(hasArticleTest(item) ? [{ article: true }] : []), ...(item.en_past_simple ? [{ forms: true }] : []), ...usageStepsFor(item)]
+    : [];
+  // L'article se lit aussi dans l'exemple : même masquage que pour l'usage.
+  const hasUsage = followUps.some((step) => step.test || step.article);
 
-    // Note une tentative de phase complète (base, plus formes passées le cas échéant) : une
-    // seule entrée au bilan et une seule notation Leitner par tentative.
-    const gradeRound = async (answer, isCorrect) => {
-      tally.answered += 1;
-      if (isCorrect) tally.correct += 1;
-      else tally.wrong += 1;
+  // Note une tentative de phase complète (base, plus formes passées le cas échéant) : une
+  // seule entrée au bilan et une seule notation Leitner par tentative.
+  const gradeRound = async (answer, isCorrect) => {
+    tally.answered += 1;
+    if (isCorrect) tally.correct += 1;
+    else tally.wrong += 1;
 
-      if (isCorrect && targetPhase === 3) {
-        await gradeHardAttempt(item, 3, true);
-        tally.exitedHard += 1;
-        tally.phasesCleared += 1;
-        // Le mot quitte les compliqués sans rejoindre aucune section aujourd'hui : à
-        // l'accueil, sa particule s'élèvera et éclatera au lieu d'atterrir quelque part.
-        noteRelease('tricky');
-        outcome = { done: true };
-        return 'Sorti du mode compliqué : le mot revient demain en découverte';
-      }
+    if (isCorrect && targetPhase === 3) {
+      await gradeHardAttempt(item, 3, true);
+      tally.exitedHard += 1;
+      tally.phasesCleared += 1;
+      // Le mot quitte les compliqués sans rejoindre aucune section aujourd'hui : à
+      // l'accueil, sa particule s'élèvera et éclatera au lieu d'atterrir quelque part.
+      noteRelease('tricky');
+      outcome = { done: true };
+      return 'Sorti du mode compliqué : le mot revient demain en découverte';
+    }
 
-      const graded = await gradeHardAttempt(item, targetPhase, isCorrect);
+    await gradeHardAttempt(item, targetPhase, isCorrect);
 
-      if (isCorrect) {
-        tally.phasesCleared += 1;
-        outcome = { done: false, newPhase: advancedPhase(targetPhase, item.item_type) };
-        return null;
-      }
+    if (isCorrect) {
+      tally.phasesCleared += 1;
+      outcome = { done: false, newPhase: advancedPhase(targetPhase) };
+      return null;
+    }
 
-      // Plafonné : le plafond du jour bloque toute nouvelle tentative, mais la phase
-      // elle-même ne bouge pas — pas de pastille de transition, juste la réponse barrée.
-      if (graded.cappedToday) {
-        outcome = { done: true };
-        return { wrongAnswer: null };
-      }
-      const demoted = demotedPhase(targetPhase, item.item_type);
-      outcome = demoted !== targetPhase ? { done: false, newPhase: demoted } : { loop: true };
-      // La faute est déjà barrée dans la carte : seule la transition de phase reste dessous.
-      return { wrongAnswer: null, before: `Phase ${targetPhase}`, after: `Phase ${demoted}` };
+    outcome = { done: true, rescue: rescuePhase(targetPhase, item.item_type) };
+    // La faute est déjà barrée dans la carte : seule la phase de reprise (prochaine séance)
+    // reste dessous.
+    return { wrongAnswer: null, before: `Phase ${targetPhase}`, after: `Phase ${initialHardPhase(item.item_type)}` };
+  };
+
+  const result = await morphCard(container, {
+    instruction,
+    question,
+    hint,
+    // Le sens annote le mot français : en phase 1, où le français est la réponse à trouver,
+    // il ne s'affiche qu'avec le résultat, jamais sous la question.
+    sensHint: targetPhase === 1 ? null : sensHint,
+    questionRegion,
+    answerRegion,
+    promptRegion,
+    answer: expected,
+    pos,
+    registre: item.registre,
+    sens: item.sens,
+    // Règle et exemple masqués quand des questions d'usage suivent (comme dans le circuit
+    // normal) : ils donneraient leurs réponses. La fiche complète se déplie sous la dernière.
+    usage: hasUsage ? null : item.usage,
+    // Français seul ; en phase 1 la réponse attendue est le français, déjà en haut de la carte.
+    translation: targetPhase === 1 ? '' : question,
+    example: hasUsage ? null : (item.example || item.explication),
+    checkFn,
+    getConsequence: async (answer, isCorrect) => {
+      // Des cartes de suite restent : la note attend la dernière d'entre elles, juste ou
+      // fausse (comme finalizeVocabItem dans le circuit normal).
+      if (followUps.length) return null;
+      return gradeRound(answer, isCorrect);
+    },
+  });
+  if (result.skipped) throw new ItemSkipped();
+
+  // Même ordre que le circuit normal : toutes les cartes de suite sont posées, même après
+  // une erreur, une seule fois chacune (pas de 2e tentative en mode compliqué). Une seule
+  // notation par tentative de phase, portée par la dernière carte : la phase n'est réussie
+  // que si tout est juste. La réponse barrée n'est montrée que si cette dernière carte est
+  // elle-même fausse.
+  let allCorrect = result.isCorrect;
+  for (let i = 0; i < followUps.length; i += 1) {
+    const last = i === followUps.length - 1;
+    const consequence = (answer, ok) => {
+      if (!last) return null;
+      return gradeRound(ok ? '' : answer, allCorrect && ok);
     };
+    const rule = last && followUps[i].test ? usageRuleHtml(item.usage) : '';
+    const ok = await runHardFollowUp(container, item, followUps[i], pos, consequence, rule);
+    allCorrect = allCorrect && ok;
+  }
+  if (hasUsage) await wordCard(container, item, allCorrect);
+  if (outcome.rescue) await askHardRescue(container, item, outcome.rescue);
+  return outcome;
+}
 
+// Question de rattrapage après un échec : celle de la phase du dessous (la même à la phase la
+// plus basse), reposée jusqu'à la bonne réponse. Non notée — le mot est déjà renvoyé à sa
+// phase de départ et quitte la séance. Passer la question l'abandonne simplement.
+async function askHardRescue(container, item, phase) {
+  const {
+    instruction, question, expected, hint, sensHint, checkFn, questionRegion, answerRegion, promptRegion,
+  } = hardModeQuestion(item, phase);
+  while (true) {
     const result = await morphCard(container, {
       instruction,
       question,
+      // Phase 2 : son indice habituel ; phase 1 : aucun (la réponse attendue est le français).
       hint,
-      // Le sens annote le mot français : en phase 1, où le français est la réponse à trouver,
-      // il ne s'affiche qu'avec le résultat, jamais sous la question.
-      sensHint: targetPhase === 1 ? null : sensHint,
+      retry: true,
+      retryLabel: 'Rattrapage',
+      sensHint: phase === 1 ? null : sensHint,
       questionRegion,
       answerRegion,
       promptRegion,
       answer: expected,
-      pos,
+      pos: isWord(item) ? item.type : null,
       registre: item.registre,
       sens: item.sens,
-      // Règle et exemple masqués quand des questions d'usage suivent (comme dans le circuit
-      // normal) : ils donneraient leurs réponses. La fiche complète se déplie sous la dernière.
-      usage: hasUsage ? null : item.usage,
-      // Français seul ; en phase 1 la réponse attendue est le français, déjà en haut de la carte.
-      translation: targetPhase === 1 ? '' : question,
-      example: hasUsage ? null : (item.example || item.explication),
+      usage: item.usage,
+      translation: phase === 1 ? '' : question,
+      example: item.example || item.explication,
       checkFn,
-      getConsequence: async (answer, isCorrect) => {
-        // Des cartes de suite restent : la note attend la dernière d'entre elles, juste ou
-        // fausse (comme finalizeVocabItem dans le circuit normal).
-        if (followUps.length) return null;
-        return gradeRound(answer, isCorrect);
-      },
     });
-    if (result.skipped) throw new ItemSkipped();
-
-    // Même ordre que le circuit normal : toutes les cartes de suite sont posées, même après
-    // une erreur, une seule fois chacune (pas de 2e tentative en mode compliqué). Une seule
-    // notation par tentative de phase, portée par la dernière carte : la phase n'est réussie
-    // que si tout est juste. La réponse barrée n'est montrée que si cette dernière carte est
-    // elle-même fausse.
-    let allCorrect = result.isCorrect;
-    for (let i = 0; i < followUps.length; i += 1) {
-      const last = i === followUps.length - 1;
-      const consequence = (answer, ok) => {
-        if (!last) return null;
-        return gradeRound(ok ? '' : answer, allCorrect && ok);
-      };
-      const rule = last && followUps[i].test ? usageRuleHtml(item.usage) : '';
-      const ok = await runHardFollowUp(container, item, followUps[i], pos, consequence, rule);
-      allCorrect = allCorrect && ok;
-    }
-    if (hasUsage) await wordCard(container, item, allCorrect);
-    if (!outcome.loop) return outcome;
+    if (result.skipped || result.isCorrect) return;
   }
 }
 
@@ -1580,9 +1602,8 @@ async function runHardFollowUp(container, item, step, pos, consequence, rule = '
 // --- Modes -----------------------------------------------------------------
 
 // Tous les items passent d'abord en phase 1, puis tous ceux encore actifs en phase 2, puis
-// en phase 3 — jamais le trajet complet 1→2→3 d'un item avant le suivant. La phase 1 est
-// toujours vidée en premier à chaque tour, si bien qu'un item redescendu en phase 1 (échec
-// en phase 2) y repasse avant les items restants en phase 2/3, comme n'importe quel autre.
+// en phase 3 — jamais le trajet complet 1→2→3 d'un item avant le suivant. Un item raté
+// quitte la séance (après sa question de rattrapage) : il ne revient qu'à la suivante.
 export async function renderHardMode(container, { hardItems }, { onComplete, onExit }) {
   // Toujours la barre classique : le total compte les franchissements de phase nécessaires
   // pour sortir chaque mot (3 ou 2 selon le type), pas les mots eux-mêmes — des points n'y
@@ -1594,13 +1615,10 @@ export async function renderHardMode(container, { hardItems }, { onComplete, onE
   const queues = { 1: [], 2: [], 3: [] };
   for (const item of hardItems) queues[item.hard_phase].push(item);
 
-  // Plus-haut niveau atteint par item (ne redescend jamais, même si l'item lui-même
-  // redescend de phase après un échec) — c'est ce qui fait que la barre progresse toujours,
-  // sans jamais reculer, quel que soit le nombre d'aller-retours d'un mot entre les phases.
+  // Plus-haut niveau atteint par item : la barre progresse toujours, sans jamais reculer.
   const key = (item) => `${item.item_type}:${item.item_key}`;
   const highWater = new Map(hardItems.map((item) => [key(item), hardModeStepIndex(item.item_type, item.hard_phase)]));
-  // Un item quitte définitivement la session (sorti du mode compliqué, ou plafonné pour
-  // aujourd'hui, ou passé) : sa part du total est alors comptée en entier, qu'il ait ou non
+  // Un item quitte définitivement la session (sorti du mode compliqué, raté, ou passé) : sa part du total est alors comptée en entier, qu'il ait ou non
   // effectivement franchi toutes ses phases — il ne sera plus redemandé, la barre doit le
   // refléter plutôt que rester bloquée en dessous de 100 % en fin de session.
   const finished = new Set();
