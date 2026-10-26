@@ -670,6 +670,18 @@ function discoverCard(area, { word, pos, example, translation, registre, sens, u
     onSwipe(zone, { onLeft: () => flip(1), onRight: () => flip(-1), onUp: next });
     onCardTap(card, flipFromTap);
     area.querySelector('#next-btn').addEventListener('click', next);
+
+    // Carte plus haute que l'écran (sens et usage longs, petit téléphone) : on resserre d'abord
+    // l'espace au-dessus du mot (--tall) ; si ça ne suffit pas, seul cas où le doigt doit
+    // pouvoir faire défiler la zone (--scroll), sinon le bas de la carte serait inaccessible.
+    const overflows = () => zone.scrollHeight > zone.clientHeight + 1;
+    const fitScroll = () => {
+      zone.classList.remove('session-body--tall');
+      zone.classList.toggle('session-body--tall', overflows());
+      zone.classList.toggle('session-body--scroll', overflows());
+    };
+    requestAnimationFrame(fitScroll);
+    new ResizeObserver(fitScroll).observe(zone);
   });
 }
 

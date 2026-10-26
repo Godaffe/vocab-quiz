@@ -681,6 +681,11 @@ input[type="text"]:focus, input[type="number"]:focus {
 }
 .session-foot { flex: none; padding: 16px 0 32px; display: flex; flex-direction: column; gap: 10px; }
 .session-note { text-align: center; font: 500 12.5px/1.4 var(--font-ui); color: var(--text-muted); }
+/* Carte découverte plus haute que l'écran : le défilement vertical au doigt est rendu à la
+   zone (voir discoverCard). Le glissement vers le haut défile alors au lieu de passer au mot
+   suivant (le bouton reste) ; le glissement latéral et le tap retournent toujours la carte. */
+.session-body--scroll, .session-body--scroll .ds-flip { touch-action: pan-y; }
+.session-body--tall .ds-flip__spacer { flex-basis: 8px; }
 
 /* ---------- pile de cartes ---------- */
 
@@ -700,13 +705,19 @@ input[type="text"]:focus, input[type="number"]:focus {
 /* ---------- carte découverte (retournement) ---------- */
 
 .ds-flip {
-  position: relative; display: flex; flex-direction: column; flex: 1; min-height: 340px;
+  position: relative; display: flex; flex-direction: column; flex: 1 0 auto; min-height: 340px;
   perspective: 1400px; touch-action: none; cursor: pointer;
   transition: transform 160ms var(--ease-out), opacity 160ms linear;
   will-change: transform;
   --flip-dir: 1;
 }
-.ds-flip__inner { position: relative; flex: 1; min-height: 0; transform-style: preserve-3d; transition: transform var(--dur-flip) var(--ease-in-out); }
+/* Les deux faces occupent la même case de grille au lieu d'être posées en absolu : la carte
+   prend la hauteur de la face la plus haute, sans jamais rogner ni superposer son contenu
+   (ex. « de même / également », sens et usage longs). */
+.ds-flip__inner { position: relative; flex: 1 0 auto; display: grid; transform-style: preserve-3d; transition: transform var(--dur-flip) var(--ease-in-out); }
+/* La pile ne doit pas écraser la carte sous sa hauteur de contenu : c'est .session-body qui
+   défile si la carte dépasse l'écran. */
+.ds-stack__live:has(> .ds-flip) { flex-shrink: 0; min-height: auto; }
 /* Le sens du retournement suit le geste (tap du côté touché, ou sens du glissement latéral) :
    --flip-dir vaut 1 ou -1, posé en JS juste avant de retourner la carte, voir onCardTap/
    onSwipe dans main.js. Les deux sens aboutissent visuellement à la même face (rotateY(180deg)
@@ -715,12 +726,13 @@ input[type="text"]:focus, input[type="number"]:focus {
 .ds-flip--back .ds-flip__inner { transform: rotateY(calc(var(--flip-dir) * 180deg)); }
 
 .ds-flip__face {
-  position: absolute;
-  inset: 0;
+  position: relative;
+  grid-area: 1 / 1;
+  min-width: 0;
   background: var(--paper-high);
   border-radius: var(--radius-card);
   box-shadow: var(--keyline), var(--shadow-raised);
-  padding: 28px 22px 44px;
+  padding: 28px 22px 20px;
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
   transition: opacity var(--dur-fast) var(--ease-out) var(--dur-fast);
@@ -741,6 +753,7 @@ input[type="text"]:focus, input[type="number"]:focus {
 .ds-flip__fill { flex: 1 1 auto; }
 
 .ds-flip__head { display: flex; flex-direction: column; align-items: center; gap: 13px; }
+.ds-flip__tags { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; }
 
 .ds-flip__face--front { opacity: 1; }
 .ds-flip--back .ds-flip__face--front { opacity: 0; }
@@ -778,14 +791,14 @@ input[type="text"]:focus, input[type="number"]:focus {
   .ds-flip--out { transform: none; }
 }
 
+/* Dans le flux, sous le contenu : il ne peut plus recouvrir un texte long. */
 .ds-flip__foot {
-  position: absolute;
-  left: 0; right: 0; bottom: 20px;
+  margin-top: 20px;
   font: 500 12.5px/1.4 var(--font-ui);
   color: var(--text-muted);
 }
 
-/* Exemple du recto : languette qui mord le bord supérieur du cadre, comme une fiche
+/* Exemple du verso : languette qui mord le bord supérieur du cadre, comme une fiche
    cartonnée — jamais un simple encadré, pour le distinguer clairement du mot lui-même. */
 .ds-example--tab {
   position: relative;
@@ -844,7 +857,7 @@ input[type="text"]:focus, input[type="number"]:focus {
 }
 
 /* Registre du verso : même rôle que .ds-wordinfo__register ailleurs, mais en pastille autonome
-   sous le mot plutôt qu'empilée avec sens/usage, avec son libellé intégré. */
+   sous le mot plutôt qu'empilée avec sens/usage, sans libellé : la valeur seule suffit. */
 .ds-flip__registre {
   display: inline-flex;
   align-items: baseline;
@@ -856,7 +869,6 @@ input[type="text"]:focus, input[type="number"]:focus {
   color: var(--copper-600);
   white-space: nowrap;
 }
-.ds-flip__registre-label { opacity: .7; }
 
 /* Sens / Usage du verso : une pastille carrée porte le libellé, le texte suit à droite — deux
    teintes cuivre qui montent en intensité, jamais empilées en simples lignes étiquetées comme
