@@ -153,7 +153,7 @@ function fieldCardHtml(label, text, variant) {
   return `
     <div class="ds-flip__field ds-flip__field--${variant}">
       <div class="ds-flip__fieldicon ds-flip__fieldicon--${variant}"><span class="ds-flip__fieldlabel ds-flip__fieldlabel--${variant}">${escapeHtml(label)}</span></div>
-      <div class="ds-flip__fieldtext${compact ? ' ds-flip__fieldtext--sm' : ''}">${escapeHtml(text)}</div>
+      <div class="ds-flip__fieldtext${compact ? ' ds-flip__fieldtext--sm' : ''}">${escapeHtml(variant === 'usage' ? usageLines(text) : text)}</div>
     </div>
   `;
 }
@@ -247,7 +247,7 @@ export function morphCardHtml({
           </div>` : ''}
           ${usage ? `
           <div class="ds-result__usage">
-            <div class="ds-result__blockvalue">${escapeHtml(usage)}</div>
+            <div class="ds-result__blockvalue">${escapeHtml(usageLines(usage))}</div>
           </div>` : ''}
           ${example ? `
           <div class="ds-result__example">
@@ -263,7 +263,30 @@ export function morphCardHtml({
 // du mot : plus tôt, elle donnerait la réponse des suivantes (choix d'Anto du 13/10).
 export function usageRuleHtml(usage) {
   if (!usage) return '';
-  return `<div class="ds-result__usage"><div class="ds-result__blockvalue">${escapeHtml(usage)}</div></div>`;
+  return `<div class="ds-result__usage"><div class="ds-result__blockvalue">${escapeHtml(usageLines(usage))}</div></div>`;
+}
+
+// Une règle d'usage par ligne, dans le même bloc (choix d'Anto du 26/10) : le classeur les
+// écrit à la suite, chacune finie par un point (« Présent : er fährt. Parfait avec sein. »).
+// On coupe après un point suivi d'une majuscule, jamais à l'intérieur de « … » (une citation
+// comme « Nice to meet you. – Likewise. » reste entière). Les retours à la ligne déjà présents
+// dans la cellule sont gardés ; l'affichage repose sur white-space: pre-line.
+export function usageLines(text) {
+  const s = String(text ?? '');
+  let out = '';
+  let quote = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === '«') quote += 1;
+    else if (c === '»') quote = Math.max(0, quote - 1);
+    if (quote === 0 && /[.!?]/.test(c) && s[i + 1] === ' ' && /[A-ZÀ-ÖØ-Þ«]/.test(s[i + 2] ?? '')) {
+      out += `${c}\n`;
+      i += 1;
+      continue;
+    }
+    out += c;
+  }
+  return out;
 }
 
 // Carte phrase à trous (tests d'usage) : même gabarit compact que les cartes de placement et
