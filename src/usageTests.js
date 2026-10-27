@@ -119,11 +119,12 @@ export function checkGap(test, answer) {
   return test.answers.some((expected) => answersMatchExact(answer, expected));
 }
 
-// Juste seulement si les phrases cochées sont exactement les bonnes : ni oubli, ni en trop.
-// `selected` contient des indices dans test.options.
+// Juste si au moins une bonne phrase est cochée et aucune fausse : quand plusieurs phrases
+// sont justes, en cocher une seule suffit. `selected` contient des indices dans test.options.
 export function checkChoice(test, selected) {
   const chosen = new Set(selected);
-  return test.options.every((option, i) => option.correct === chosen.has(i));
+  const picked = test.options.filter((_, i) => chosen.has(i));
+  return picked.length > 0 && picked.every((option) => option.correct);
 }
 
 // Phrase complète d'un trou, avec la première réponse admise : sert de corrigé.
