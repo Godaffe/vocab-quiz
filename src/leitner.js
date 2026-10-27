@@ -21,6 +21,15 @@ const langTypeFilter = () => `item_type IN (${LANG_TABLES[currentLang()].map((t)
 // Les clés anglaises gardent leur nom d'origine : les compteurs déjà enregistrés restent valables.
 const langKey = (key) => (currentLang() === 'en' ? key : `${key}_${currentLang()}`);
 
+// Quota de mots nouveaux par jour, propre à chaque langue (10 par défaut). Une langue autre que
+// l'anglais sans réglage propre reprend la valeur anglaise : rien ne change tant qu'on ne la règle pas.
+export function getNewItemsPerDay(lang = currentLang()) {
+  const base = parseInt(getSetting('new_items_per_day') ?? '10', 10);
+  if (lang === 'en') return base;
+  const own = getSetting(`new_items_per_day_${lang}`);
+  return own == null ? base : parseInt(own, 10);
+}
+
 function addDays(isoDate, days) {
   const d = new Date(`${isoDate}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + days);
@@ -86,7 +95,7 @@ export const getStartedToday = (todayISO) => getDailyCounter('started_today_coun
 // forward day by day when a day is already full of scheduled requeues (review failures and
 // "mots compliqués" graduates share this same daily cap).
 function scheduleRequeue(todayISO) {
-  const capacity = parseInt(getSetting('new_items_per_day') ?? '10', 10);
+  const capacity = getNewItemsPerDay();
   let date = addDays(todayISO, 1);
   while (true) {
     const row = get(`SELECT COUNT(*) as c FROM progress WHERE requeue_date = ? AND ${langTypeFilter()}`, [date]);

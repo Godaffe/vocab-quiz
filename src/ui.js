@@ -8,7 +8,7 @@ import { exportToFile, importFromFile, daysSince } from './backup.js';
 import {
   getAllProgress, advancedPhase, rescuePhase, initialHardPhase, getFailedWordsPool,
   getStreak, getLearnedCount, getInProgressCount, countNewIntroducedToday,
-  countReviewedToday, getProgressRow, getLearnedToday, getStartedToday, currentLang,
+  countReviewedToday, getProgressRow, getLearnedToday, getStartedToday, currentLang, getNewItemsPerDay,
 } from './leitner.js';
 import {
   escapeHtml, sessionHeaderHtml, barHtml, dotsProgressHtml, cardStackHtml, flipCardHtml, morphCardHtml, choiceCardHtml, typeCardHtml, typeChipHtml, usageRuleHtml, gapCardHtml,
@@ -332,7 +332,7 @@ export async function renderHome(container, { onStartHard, onStartLearning, onSt
     inProgressCount: getInProgressCount(),
     learnedToday: getLearnedToday(today),
     startedToday: getStartedToday(today),
-    dailyBudget: parseInt(getSetting('new_items_per_day') ?? '10', 10),
+    dailyBudget: getNewItemsPerDay(),
     introducedToday: countNewIntroducedToday(today),
     newRemaining: session.newItems.length,
     reviewRemaining: session.reviewItems.length,
@@ -1728,7 +1728,7 @@ function pluralFr(n, word, pluralWord = `${word}s`) {
 // de la barre de répartition ci-dessous (valeur, couleur, libellé de légende).
 function buildRecapVisual(tally) {
   if (tally.kind === 'learning') {
-    const dailyBudget = parseInt(getSetting('new_items_per_day') ?? '10', 10);
+    const dailyBudget = getNewItemsPerDay();
     const introducedToday = countNewIntroducedToday(todayISO());
     return {
       accent: 'new',
@@ -1984,7 +1984,8 @@ function toastHtml(tone, message, withIcon) {
 }
 
 export function renderSettings(container) {
-  const n = getSetting('new_items_per_day') ?? '10';
+  const nEn = getNewItemsPerDay('en');
+  const nDe = getNewItemsPerDay('de');
   const lastExport = getSetting('last_manual_export');
   const since = daysSince(lastExport);
   const lastExportText = since === null ? 'jamais' : since === 0 ? "aujourd'hui" : `il y a ${since} jour(s)`;
@@ -2006,8 +2007,11 @@ export function renderSettings(container) {
       <div class="ds-section">
         <div class="ds-section__head">${icon('sparkles', { size: 18, color: 'var(--copper-600)' })}<span class="ds-section__title">Nouveaux items par jour</span></div>
         <div class="ds-section__body">
-          <p>Nombre maximum de nouveaux mots/règles/expressions introduits chaque jour, tous types confondus.</p>
-          <input type="number" id="n-input" min="1" step="1" value="${escapeHtml(n)}" />
+          <p>Nombre maximum de nouveaux mots/règles/expressions introduits chaque jour, tous types confondus. Chaque langue a son propre objectif.</p>
+          <label class="n-lang" for="n-input-en">Anglais</label>
+          <input type="number" id="n-input-en" min="1" step="1" value="${nEn}" />
+          <label class="n-lang" for="n-input-de">Allemand</label>
+          <input type="number" id="n-input-de" min="1" step="1" value="${nDe}" />
           <button type="button" class="ds-btn ds-btn--sm" id="n-save-btn">Enregistrer</button>
           <div id="n-status"></div>
         </div>
@@ -2092,13 +2096,15 @@ export function renderSettings(container) {
   });
 
   container.querySelector('#n-save-btn').addEventListener('click', async () => {
-    const value = parseInt(container.querySelector('#n-input').value, 10);
+    const valueEn = parseInt(container.querySelector('#n-input-en').value, 10);
+    const valueDe = parseInt(container.querySelector('#n-input-de').value, 10);
     const status = container.querySelector('#n-status');
-    if (!Number.isFinite(value) || value < 1) {
-      status.innerHTML = '<div class="ds-alert ds-alert--warning">Merci de saisir un nombre valide (≥ 1).</div>';
+    if (![valueEn, valueDe].every((v) => Number.isFinite(v) && v >= 1)) {
+      status.innerHTML = '<div class="ds-alert ds-alert--warning">Merci de saisir un nombre valide (≥ 1) pour chaque langue.</div>';
       return;
     }
-    await setSetting('new_items_per_day', value);
+    await setSetting('new_items_per_day', valueEn);
+    await setSetting('new_items_per_day_de', valueDe);
     status.innerHTML = '<div class="ds-alert ds-alert--success">Enregistré.</div>';
   });
 

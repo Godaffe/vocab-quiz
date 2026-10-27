@@ -1,11 +1,9 @@
-import { getSetting } from './db.js';
-import { buildDailySession, gradeAnswer, exitHardMode, recordHardAttempt } from './leitner.js';
+import { buildDailySession, getNewItemsPerDay, gradeAnswer, exitHardMode, recordHardAttempt } from './leitner.js';
 import { answersMatch, answersMatchAny } from './normalize.js';
 import { todayISO } from './dates.js';
 
 export async function startSession() {
-  const n = parseInt(getSetting('new_items_per_day') ?? '10', 10);
-  return buildDailySession(n, todayISO());
+    return buildDailySession(getNewItemsPerDay(), todayISO());
 }
 
 export function checkBase(item, answer) {

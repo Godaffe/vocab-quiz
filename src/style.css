@@ -239,6 +239,9 @@ input[type="text"], input[type="number"], input[type="file"] {
   box-shadow: var(--inset-well);
 }
 
+/* Réglages : libellé de langue au-dessus de chaque objectif de mots nouveaux. */
+.n-lang { display: block; margin-top: 8px; font: 600 13px/1.45 var(--font-ui); color: var(--text-strong); }
+
 input[type="text"]:focus, input[type="number"]:focus {
   outline: 0;
   border-color: var(--copper-400);
