@@ -6,7 +6,7 @@ import {
 import { getSetting, setSetting, resetDatabase } from './db.js';
 import { exportToFile, importFromFile, daysSince } from './backup.js';
 import {
-  getAllProgress, advancedPhase, rescuePhase, initialHardPhase, getFailedWordsPool,
+  getAllProgress, advancedPhase, rescuePhase, initialHardPhase, getFailedWordsPool, comesFromDiscovery, nextLevelOnIncorrect,
   getStreak, getLearnedCount, getInProgressCount, countNewIntroducedToday,
   countReviewedToday, getProgressRow, getLearnedToday, getStartedToday, currentLang, getNewItemsPerDay,
 } from './leitner.js';
@@ -1192,17 +1192,18 @@ function discoverFields(item) {
 
 // La conséquence d'un échec est lue dans la ligne de progression telle qu'elle est avant
 // notation, donc elle décrit ce que la règle Leitner va réellement faire de l'item. Rendue
-// en pastilles avant/après (pas une phrase) — omises quand rien ne change (entraînement
-// libre, ou déjà au niveau plancher).
+// en pastilles avant/après (pas une phrase) — omises quand rien ne change (échec dans les mots
+// ratés, ou déjà au niveau plancher). Un 3e échec d'affilée mène aux mots compliqués partout,
+// mots ratés compris.
 function failureConsequence(item, answer, { preserveSchedule = false } = {}) {
   const wrongAnswer = answer.trim() || null;
-  if (preserveSchedule) return { wrongAnswer };
   const row = getProgressRow(item.item_type, item.item_key);
   if (row && row.consecutive_failures + 1 >= 3) {
     return { wrongAnswer, before: `N${row.box_level}`, after: 'compliqué' };
   }
-  const current = row?.box_level ?? 0;
-  const next = Math.max(current - 1, 0);
+  if (preserveSchedule || !row) return { wrongAnswer };
+  const current = row.box_level;
+  const next = comesFromDiscovery(row) ? 0 : nextLevelOnIncorrect(current);
   if (current === next) return { wrongAnswer };
   return { wrongAnswer, before: `N${current}`, after: `N${next}` };
 }

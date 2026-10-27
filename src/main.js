@@ -1,5 +1,7 @@
 import './style.css';
 import { initDb } from './db.js';
+import { todayISO } from './dates.js';
+import { migrateFailedReviewRequeues } from './leitner.js';
 import { rotateInternalBackup } from './backup.js';
 import { icon } from './icons.js';
 import { growFromRect, shrinkToRect } from './card.js';
@@ -136,6 +138,8 @@ function showProgress() {
 async function main() {
   await initDb();
   await rotateInternalBackup();
+  // Après la sauvegarde interne : elle garde l'état d'avant le rattrapage.
+  await migrateFailedReviewRequeues(todayISO());
 
   app.innerHTML = '';
   app.appendChild(screen);

@@ -8,8 +8,17 @@ export function nextLevelOnCorrect(level) {
   return { level: level + 1, learned: false };
 }
 
+// Échec d'un mot déjà réussi au moins une fois (règle du 26/10/2026) : N2, N3, N4 ou appris
+// retombent à N1, N1 retombe à N0.
 export function nextLevelOnIncorrect(level) {
-  return Math.max(level - 1, 0);
+  return level >= 2 ? 1 : 0;
+}
+
+// Un item qui arrive par la découverte (jamais noté, ou reprogrammé comme mot nouveau : mot
+// neuf raté, sortie des mots compliqués) y retourne s'il est raté. Tout autre item est un mot
+// en cours : raté, il reste en révision.
+export function comesFromDiscovery(row) {
+  return row.total_reviews === 0 || Boolean(row.requeue_date);
 }
 
 // Langue active (réglage « langue », anglais par défaut) : chaque langue a ses propres tables,
@@ -137,21 +146,28 @@ export async function gradeAnswer(itemType, itemKey, isCorrect, todayISO, { pres
     // renforcement (getLearnedSample) ne doit pas regonfler le delta du jour.
     if (learned && !row.is_learned) bumpLearnedToday(todayISO);
   } else if (preserveSchedule) {
-    // Retry volontaire depuis "Réviser mes mots ratés" : reste au niveau 0, échéance inchangée.
+    // Échec dans « Réviser mes mots ratés » : niveau et échéance inchangés, le mot reste raté.
     boxLevel = row.box_level;
     isLearned = 0;
     correctStreak = 0;
     nextReviewDate = row.next_review_date;
     requeueDate = row.requeue_date;
-  } else {
-    // Any failure — a brand-new item as much as one already in review — leaves today's pool
-    // entirely and comes back as a new item (discovery card + test) on the earliest future day
-    // that still has room in the daily budget.
-    boxLevel = nextLevelOnIncorrect(row.box_level);
+  } else if (comesFromDiscovery(row)) {
+    // Mot neuf (ou reprogrammé) raté : il quitte le jour et revient comme mot nouveau (carte de
+    // découverte + test) au premier jour suivant qui a encore de la place dans le quota.
+    boxLevel = 0;
     isLearned = 0;
     correctStreak = 0;
     nextReviewDate = null;
     requeueDate = scheduleRequeue(todayISO);
+  } else {
+    // Mot en cours raté : il ne repasse jamais par la découverte. Il retombe à N1 (ou N0 s'il
+    // était à N1), revient en révision demain et figure dans les mots ratés en attendant.
+    boxLevel = nextLevelOnIncorrect(row.box_level);
+    isLearned = 0;
+    correctStreak = 0;
+    nextReviewDate = addDays(todayISO, 1);
+    requeueDate = null;
   }
 
   run(
@@ -362,18 +378,34 @@ export function getInProgressCount() {
   return get(`SELECT COUNT(*) as c FROM (${unionAll('total_reviews > 0 AND is_learned = 0')})`).c;
 }
 
-// Words already attempted at least once and currently sitting at level 0 in the normal
-// circuit — excludes never-seen items (total_reviews = 0) and "mots compliqués" items
-// (learning_process = 'hard'), which have their own dedicated track.
-// `last_result = 'incorrect'` : un mot n'est « raté » que si sa dernière réponse était fausse.
-// Sans cette condition, un mot qui vient de SORTIR du mode compliqué (exitHardMode le repose
-// à box_level 0 dans le circuit normal, avec un requeue_date à venir) retomberait le jour même
-// dans les mots ratés, alors qu'il vient d'être sauvé et qu'on lui annonce un retour en
-// découverte — la seule ligne que ce filtre écarte.
+// Mots ratés : items du circuit normal déjà notés dont la dernière réponse est fausse, quel que
+// soit leur niveau (N1 ou N0 après un échec). Une réussite, en révision ou ici, les fait sortir.
+// Exclut les mots compliqués (circuit à part) et un mot qui vient de SORTIR du mode compliqué :
+// exitHardMode note sa dernière réponse juste, il n'est pas raté.
 export function getFailedWordsPool() {
   return all(unionAll(
-    "learning_process = 'normal' AND box_level = 0 AND total_reviews > 0 AND is_learned = 0 AND last_result = 'incorrect'"
+    "learning_process = 'normal' AND total_reviews > 0 AND is_learned = 0 AND last_result = 'incorrect'"
   ));
+}
+
+// Rattrapage unique de la règle du 26/10/2026 : les mots en cours que l'ancienne règle a
+// renvoyés en découverte (reprogrammés, dernière réponse fausse, déjà réussis au moins une fois,
+// c.-à-d. plus de réponses que d'échecs d'affilée) reviennent en révision aujourd'hui, au niveau
+// qu'ils auraient eu avec la nouvelle règle : l'ancienne avait ôté un niveau, donc N1 ou plus
+// en attente (N2+ avant l'échec) -> N1, N0 en attente (N1 avant l'échec) -> N0. Les mots neufs
+// ratés (jamais réussis) restent en découverte.
+export async function migrateFailedReviewRequeues(todayISO) {
+  if (getSetting('migration_echec_revision') === 'done') return;
+  run(
+    `UPDATE progress SET
+       box_level = CASE WHEN box_level >= 1 THEN 1 ELSE 0 END,
+       next_review_date = ?, requeue_date = NULL
+     WHERE learning_process = 'normal' AND requeue_date IS NOT NULL AND last_result = 'incorrect'
+       AND total_reviews > consecutive_failures`,
+    [todayISO]
+  );
+  run("INSERT INTO settings (key, value) VALUES ('migration_echec_revision', 'done') ON CONFLICT(key) DO UPDATE SET value = excluded.value");
+  await save();
 }
 
 export async function buildDailySession(newItemsPerDay, todayISO) {
