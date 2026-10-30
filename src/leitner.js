@@ -260,23 +260,23 @@ export function initialHardPhase(itemType) {
 const CONTENT_QUERIES = {
   vocabulaire: `SELECT 'vocabulaire' as item_type, key as item_key, fr as prompt, en_base, en_past_simple,
                        en_past_participle, example, type, NULL as explication, NULL as en, registre, sens, usage, usage_tests,
-                       region, NULL as genre, NULL as pluriel
+                       region, NULL as genre, NULL as pluriel, NULL as auxiliaire, NULL as troisieme_personne
                 FROM vocabulaire`,
   grammaire: `SELECT 'grammaire' as item_type, key as item_key, fr as prompt, NULL as en_base, NULL as en_past_simple,
                      NULL as en_past_participle, NULL as example, NULL as type, explication, en,
                      NULL as registre, NULL as sens, NULL as usage, NULL as usage_tests, NULL as region,
-                     NULL as genre, NULL as pluriel
+                     NULL as genre, NULL as pluriel, NULL as auxiliaire, NULL as troisieme_personne
               FROM grammaire`,
   expressions: `SELECT 'expressions' as item_type, key as item_key, meaning as prompt, NULL as en_base, NULL as en_past_simple,
                        NULL as en_past_participle, example, NULL as type, NULL as explication, en,
                        NULL as registre, NULL as sens, NULL as usage, NULL as usage_tests, region,
-                       NULL as genre, NULL as pluriel
+                       NULL as genre, NULL as pluriel, NULL as auxiliaire, NULL as troisieme_personne
                 FROM expressions`,
   // Mot allemand : mêmes colonnes que Voc (de_base joue le rôle d'en_base), plus l'article
-  // (genre) et le pluriel irrégulier.
+  // (genre), le pluriel irrégulier, l'auxiliaire du parfait d'un verbe et sa 3e personne irrégulière.
   allemand: `SELECT 'allemand' as item_type, key as item_key, fr as prompt, de_base as en_base,
                     de_past_simple as en_past_simple, de_past_participle as en_past_participle, example, type,
-                    NULL as explication, NULL as en, registre, sens, usage, usage_tests, NULL as region, genre, pluriel
+                    NULL as explication, NULL as en, registre, sens, usage, usage_tests, NULL as region, genre, pluriel, auxiliaire, troisieme_personne
              FROM allemand`,
 };
 

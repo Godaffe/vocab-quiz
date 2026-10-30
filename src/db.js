@@ -45,7 +45,9 @@ CREATE TABLE IF NOT EXISTS expressions (
 );
 
 -- Feuille VocAllemand : même rôle que vocabulaire. de_base/de_past_simple/de_past_participle
--- = infinitif, Präteritum et Partizip II d'un verbe fort ; genre = der/die/das d'un nom.
+-- = infinitif, Präteritum et Partizip II d'un verbe fort ; genre = der/die/das d'un nom ;
+-- auxiliaire = haben, sein ou « haben / sein » d'un verbe ; troisieme_personne = 3e personne du
+-- singulier au présent quand elle est irrégulière (« er fährt »).
 CREATE TABLE IF NOT EXISTS allemand (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   key TEXT NOT NULL UNIQUE,
@@ -56,6 +58,8 @@ CREATE TABLE IF NOT EXISTS allemand (
   de_past_participle TEXT,
   genre TEXT,
   pluriel TEXT,
+  auxiliaire TEXT,
+  troisieme_personne TEXT,
   example TEXT,
   type TEXT,
   registre TEXT,
@@ -150,6 +154,14 @@ function migrateContentColumns() {
     const columns = new Set(db.exec(`PRAGMA table_info(${table})`)[0]?.values.map((row) => row[1]) ?? []);
     if (!columns.has('region')) {
       db.exec(`ALTER TABLE ${table} ADD COLUMN region TEXT`);
+    }
+  }
+  // Auxiliaire du parfait d'un verbe allemand (colonne Auxiliaire de VocAllemand, 27/10/2026).
+  const deColumns = new Set(db.exec('PRAGMA table_info(allemand)')[0]?.values.map((row) => row[1]) ?? []);
+  // 3e personne irrégulière (colonne « 3e personne », même date).
+  for (const column of ['auxiliaire', 'troisieme_personne']) {
+    if (deColumns.size && !deColumns.has(column)) {
+      db.exec(`ALTER TABLE allemand ADD COLUMN ${column} TEXT`);
     }
   }
 }

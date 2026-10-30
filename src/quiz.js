@@ -7,15 +7,29 @@ export async function startSession() {
 }
 
 export function checkBase(item, answer) {
-  // Nom allemand : l'article a sa propre carte, il est toléré mais pas exigé ici.
+  // Nom allemand : l'article se choisit en pastille, il est toléré mais pas exigé ici.
   const typed = item.item_type === 'allemand' ? String(answer ?? '').trim().replace(/^(der|die|das)\s+/i, '') : answer;
   return answersMatchAny(typed, item.en_base);
 }
 
-// Carte d'article (noms allemands) : der / die / das, au format des cartes de phrases à cocher.
+// Pastilles de la carte de traduction allemande (27/10/2026) : l'article d'un nom
+// (der / die / das, un seul choix) ou l'auxiliaire du parfait d'un verbe (haben / sein, à
+// cocher : un verbe « haben / sein » demande les deux). Null quand le mot n'a ni l'un ni l'autre.
 export const ARTICLES = ['der', 'die', 'das'];
-export function articleTest(item) {
-  return { kind: 'choice', options: ARTICLES.map((text) => ({ text, correct: text === item.genre })) };
+export const AUXILIARIES = ['haben', 'sein'];
+export function chipTest(item) {
+  if (item.item_type !== 'allemand') return null;
+  // `prefix` : à la correction, l'article se lit devant le nom (« die Wirtschaft ») au lieu des
+  // pastilles (choix d'Anto du 27/10/2026).
+  if (ARTICLES.includes(item.genre)) return { options: ARTICLES, correct: [item.genre], multi: false, prefix: true };
+  const aux = String(item.auxiliaire ?? '').split(' / ').filter((a) => AUXILIARIES.includes(a));
+  if (aux.length) return { options: AUXILIARIES, correct: aux, multi: true };
+  return null;
+}
+
+// Juste si les pastilles choisies sont exactement les bonnes.
+export function checkChips(test, selected) {
+  return selected.length === test.correct.length && test.correct.every((c) => selected.includes(c));
 }
 
 export function checkConjugation(item, answer) {

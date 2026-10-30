@@ -755,6 +755,12 @@ input[type="text"]:focus, input[type="number"]:focus {
    au verso il vient avant les champs Sens/Usage pour les épingler juste au-dessus du pied. */
 .ds-flip__fill { flex: 1 1 auto; }
 
+/* Mot allemand sur plusieurs lignes (carte découverte) : le mot en noir, puis plus petits la
+   3e personne irrégulière et le pluriel en gris, les formes du verbe fort en orange foncé. */
+.ds-flip__wordlines { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
+.ds-flip__subline { font: 600 24px/1.15 var(--font-display); letter-spacing: -.02em; text-wrap: balance; }
+.ds-flip__subline--third, .ds-flip__subline--plural { color: var(--text-muted); }
+.ds-flip__subline--forms { color: var(--copper-700); }
 .ds-flip__head { display: flex; flex-direction: column; align-items: center; gap: 13px; }
 .ds-flip__tags { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; }
 
@@ -1567,5 +1573,112 @@ tbody tr:nth-child(even) td { background: var(--paper); }
 
 /* Formes irrégulières (« (clung / clung) ») sous le mot, sur la carte réponse complète d'un
    verbe : plus petites et grisées, elles accompagnent le mot sans lui disputer la place. */
+/* Pastilles du mot allemand sous le champ de traduction : article (der / die / das) ou
+   auxiliaire du parfait (haben / sein), à choisir avant Valider. Au corrigé, sur le fond saturé
+   du verdict : les bonnes pastilles en blanc plein, une pastille choisie à tort barrée, les
+   autres effacées. */
+.ds-morph__chips { margin-top: 14px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.ds-morph__chip {
+  min-width: 76px; min-height: var(--tap-min); padding: 0 16px; cursor: pointer;
+  background: var(--paper); border: 1.5px solid var(--border-field); border-radius: var(--radius-pill);
+  font: 600 16px/1 var(--font-ui); color: var(--text-body);
+  transition: background-color 120ms linear, border-color 120ms linear, color 120ms linear, opacity 120ms linear;
+}
+.ds-morph--committed .ds-morph__chips--prefix { display: none; }
+.ds-morph__chip--on { border-color: var(--copper-500); background: var(--copper-50); color: var(--copper-700); }
+.ds-morph__chip:disabled { cursor: default; }
+.ds-morph--tinted .ds-morph__chip { background: transparent; border-color: rgba(255, 255, 255, .35); color: rgba(255, 255, 255, .55); }
+.ds-morph--tinted .ds-morph__chip--right { background: #fff; border-color: #fff; color: var(--green-700); }
+.ds-morph--tinted.ds-morph--wrong .ds-morph__chip--right { color: var(--crimson-700); }
+.ds-morph--tinted .ds-morph__chip--wrong { border-color: #fff; color: #fff; text-decoration: line-through; }
+/* Mot juste, pastille fausse : la saisie reste en grand, sans « Ta réponse » ni ligne
+   « réponse attendue » (elle répéterait le mot). */
+.ds-morph--chipwrong.ds-morph--morphed .ds-morph__answerrows { grid-template-rows: 0fr; }
+.ds-morph--chipwrong.ds-morph--morphed .ds-morph__answerclip { opacity: 0; }
+.ds-morph--morphed.ds-morph--chipwrong .ds-morph__typed { font-size: 36px; letter-spacing: -.03em; }
+.ds-morph--unfolded.ds-morph--chipwrong .ds-morph__typedwrap { background: transparent; padding: 0; }
+.ds-morph--unfolded.ds-morph--chipwrong .ds-morph__triedlabel { display: none; }
+
 .ds-morph__forms { display: none; text-align: center; font: 500 17px/1.3 var(--font-ui); letter-spacing: 0; color: rgba(255, 255, 255, .7); padding-bottom: 4px; }
-.ds-morph--recap .ds-morph__forms { display: block; }
+/* Formes ou pluriel sous le mot : sur la fiche complète, et sur une correction de traduction
+   qui tient lieu de fiche complète (mot allemand à pastilles sans autre carte après). */
+.ds-morph--unfolded .ds-morph__forms { display: block; }
+
+/* Nom juste mais article faux (choix d'Anto du 27/10/2026) : carte rouge comme toute erreur, rien
+   de barré, le bon article écrit en rouge gras sur un carton blanc devant le nom. */
+.ds-morph__article--fixed {
+  display: inline-block; padding: 0 8px; border-radius: var(--radius-xs);
+  background: #fff; color: var(--crimson-600); font-weight: 800;
+}
+
+/* Auxiliaire d'un verbe allemand : une seule forme de pastille dans tout l'exercice (choix d'Anto
+   du 27/10/2026), celle de la question. À la correction, seules restent la pastille choisie à
+   tort (barrée, en premier) et la ou les bonnes ; affichée sans choix (formes, fiche complète),
+   elle n'apparaît qu'avec la correction. Sur la carte découverte, elle prend l'aspect « choisi ». */
+.ds-morph--committed .ds-morph__chips:not(.ds-auxchips) .ds-morph__chip:not(.ds-morph__chip--right):not(.ds-morph__chip--wrong) { display: none; }
+.ds-morph__chip--wrong { order: -1; }
+.ds-auxchips .ds-morph__chip { display: inline-flex; align-items: center; justify-content: center; cursor: default; }
+.ds-morph__chips--static { display: none; }
+.ds-morph--unfolded .ds-morph__chips--static { display: flex; }
+.ds-auxchips--flip { margin-top: 0; }
+.ds-auxchips--flip .ds-morph__chip { border-color: var(--copper-500); background: var(--copper-50); color: var(--copper-700); }
+
+/* Auxiliaire rappelé sur une carte qui ne le testait pas (formes, reprise) : discret, sur le fond
+   de la carte (choix d'Anto du 27/10/2026). Pleine pastille blanche seulement sur la fiche
+   complète et à la correction du choix. */
+.ds-morph--tinted .ds-auxchips--quiet .ds-morph__chip--right,
+.ds-morph--tinted.ds-morph--wrong .ds-auxchips--quiet .ds-morph__chip--right {
+  background: transparent; border-color: rgba(255, 255, 255, .45); color: rgba(255, 255, 255, .85);
+}
+/* Hiérarchie sous le mot (choix d'Anto du 27/10/2026) : Präteritum / Partizip II en gras (2e
+   information), 3e personne du présent et pluriel en italique sans gras (les moins importantes). */
+.ds-flip__subline--third, .ds-flip__subline--plural { font-style: italic; font-weight: 400; }
+.ds-morph__forms { font-weight: 600; }
+.ds-morph__forms--plural { font-style: italic; font-weight: 400; }
+/* Face « mot » de la carte découverte : contenu centré verticalement dans la carte (la hauteur
+   vient souvent de la face traduction, plus remplie). */
+.ds-flip__face--front .ds-flip__spacer, .ds-flip__face--front .ds-flip__fill { flex: 1 1 0; }
+
+/* Auxiliaire juste à la correction de la traduction : pastille discrète, comme sur les cartes
+   qui ne le testent pas. Seule une erreur (pastille fausse ou oubliée) la met en blanc (choix
+   d'Anto du 30/10/2026). */
+.ds-morph--tinted.ds-morph--auxok .ds-morph__chip--right {
+  background: transparent; border-color: rgba(255, 255, 255, .45); color: rgba(255, 255, 255, .85);
+}
+/* Lignes sous le mot allemand (correction finale, fiche complète) : même ordre et même
+   hiérarchie que la carte découverte — 3e personne en italique, formes du verbe fort en gras,
+   pluriel en italique. */
+.ds-morph__forms--third, .ds-morph__forms--plural { font-style: italic; font-weight: 400; }
+.ds-morph__forms--forms { font-weight: 700; color: rgba(255, 255, 255, .92); }
+.ds-morph__forms--third + .ds-morph__forms--forms { padding-top: 0; }
+
+/* Carte qui demande les formes (Präteritum / Partizip II, passé simple / participe passé) : sa
+   propre couleur avant la réponse, pour ne pas la confondre avec la carte de traduction. La
+   deuxième tentative garde l'or ; le verdict reprend vert / cramoisi. */
+.ds-morph--formsq:not(.ds-morph--tinted):not(.ds-morph--retry) {
+  background: var(--formsq-bg); box-shadow: 0 0 0 1.5px var(--formsq-ring), var(--shadow-raised); border-top: 4px solid var(--formsq-bar);
+}
+.ds-morph--formsq:not(.ds-morph--tinted):not(.ds-morph--retry) .ds-morph__label { color: var(--formsq-label); }
+:root { --formsq-bg: #E9EFF8; --formsq-ring: #7D9BC8; --formsq-bar: #34598F; --formsq-label: #233E66; }
+.ds-morph--formsq:not(.ds-morph--tinted):not(.ds-morph--retry) .ds-morph__head { background: var(--formsq-bg); }
+
+/* Réponse fausse (choix d'Anto du 30/10/2026) : en haut de la carte, le petit carton sombre de
+   la réponse fausse (celui de « Ta réponse »), avec la croix puis la saisie en dessous, en clair
+   (ni barrée ni « Ta réponse ») ; la croix du verdict et la saisie dans le corps de la carte
+   s'effacent, la réponse attendue suit. */
+.ds-morph__miss {
+  position: relative; z-index: 1; align-self: center; margin: 0 auto 10px;
+  padding: 8px 14px; border-radius: 12px; background: rgba(33, 31, 20, .2);
+  display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center;
+  width: fit-content; max-width: 100%;
+  animation: ds-fade-in 190ms linear 240ms both;
+}
+@keyframes ds-fade-in { from { opacity: 0; } to { opacity: 1; } }
+.ds-morph__missdisc {
+  width: 22px; height: 22px; border-radius: var(--radius-pill); display: grid; place-items: center;
+  background: rgba(253, 251, 245, .22); box-shadow: inset 0 0 0 1px rgba(253, 251, 245, .5);
+}
+.ds-morph__misstext { font: 600 17px/1.15 var(--font-display); letter-spacing: -.02em; color: #fff; overflow-wrap: anywhere; }
+.ds-morph--struck .ds-morph__disc, .ds-morph--struck .ds-morph__field { display: none; }
+/* Pastille choisie à tort : même carton sombre que la réponse fausse, lisible (pas barrée). */
+.ds-morph--tinted .ds-morph__chip--wrong { background: rgba(33, 31, 20, .2); border-color: transparent; color: #fff; text-decoration: none; }

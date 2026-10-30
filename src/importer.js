@@ -10,6 +10,14 @@ export function parseIrregularVerb(enText) {
   return { base: text, pastSimple: null, pastParticiple: null };
 }
 
+// Auxiliaire du parfait : « haben », « sein » ou les deux (« haben / sein », dans un ordre
+// quelconque). Toute autre valeur vaut « pas d'auxiliaire » : ni pastille ni test.
+export function parseAuxiliary(value) {
+  const parts = new Set(String(value ?? '').toLowerCase().split(/[\s/,]+/).filter(Boolean));
+  if (![...parts].every((p) => p === 'haben' || p === 'sein') || !parts.size) return null;
+  return ['haben', 'sein'].filter((p) => parts.has(p)).join(' / ');
+}
+
 const SHEETS = [
   {
     table: 'vocabulaire',
@@ -39,7 +47,7 @@ const SHEETS = [
     candidates: ['VocAllemand'],
     required: ['ID', 'Fr', 'All'],
     label: 'de',
-    fields: ['fr', 'de', 'de_base', 'de_past_simple', 'de_past_participle', 'genre', 'pluriel', 'example', 'type', 'registre', 'sens', 'usage', 'usage_tests'],
+    fields: ['fr', 'de', 'de_base', 'de_past_simple', 'de_past_participle', 'genre', 'pluriel', 'auxiliaire', 'troisieme_personne', 'example', 'type', 'registre', 'sens', 'usage', 'usage_tests'],
     mapRow(row) {
       // Verbe fort : même format que les verbes irréguliers anglais, « sterben (starb / gestorben) ».
       const { base, pastSimple, pastParticiple } = parseIrregularVerb(row.All);
@@ -52,6 +60,8 @@ const SHEETS = [
         de_past_participle: pastParticiple,
         genre: text('Genre')?.toLowerCase() ?? null,
         pluriel: text('Pluriel'),
+        auxiliaire: parseAuxiliary(text('Auxiliaire')),
+        troisieme_personne: text('3e personne'),
         example: text('Exemple en All'),
         type: text('Type'),
         registre: text('Registre'),

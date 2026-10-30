@@ -71,8 +71,22 @@ export function cardStackHtml(remaining, innerHtml, { stretch = false } = {}) {
 // hauteur différente selon ce que la carte a d'autre à montrer. Les deux faces partagent la
 // même case de grille (voir .ds-flip__inner) : la carte prend la hauteur de la plus haute, rien
 // ne déborde ni ne se superpose.
-export function flipCardHtml({ word, pos, example, translation, registre, sens, usage, region, foot }) {
+// Mot allemand de la carte découverte sur plusieurs lignes (choix d'Anto du 27/10/2026) : le mot
+// en noir (infinitif, ou nom avec son article), puis en dessous, plus petits, la 3e personne
+// irrégulière et le pluriel en gris, les formes du verbe fort en orange foncé. Le mot seul
+// décide de sa taille : il ne rétrécit plus à cause des formes écrites à côté.
+function wordLinesHtml(lines) {
+  const [main, ...rest] = lines;
+  return `<div class="ds-flip__wordlines">
+              <div class="${wordSizeClass(main.text)}">${escapeHtml(main.text)}</div>
+              ${rest.map((line) => `<div class="ds-flip__subline ds-flip__subline--${line.kind}">${escapeHtml(line.text)}</div>`).join('')}
+            </div>`;
+}
+
+export function flipCardHtml({ word, wordLines, aux = [], pos, example, translation, registre, sens, usage, region, foot }) {
+  // L'auxiliaire qualifie le verbe allemand : face allemande seulement (choix d'Anto du 30/10/2026).
   const tags = flipTagsHtml(pos, registre);
+  const wordTags = (aux.length ? auxChipsHtml(aux, 'ds-auxchips--flip') : '') + tags;
   return `
     <div class="ds-flip" id="flip-card">
       <div class="ds-flip__inner">
@@ -80,8 +94,8 @@ export function flipCardHtml({ word, pos, example, translation, registre, sens, 
           <div class="ds-flip__spacer"></div>
           <div class="ds-flip__head">
             <span class="ds-prompt">Nouveau mot</span>
-            ${withRegion(`<div class="${wordSizeClass(word)}">${escapeHtml(word)}</div>`, region)}
-            ${tags}
+            ${wordLines ? wordLinesHtml(wordLines) : withRegion(`<div class="${wordSizeClass(word)}">${escapeHtml(word)}</div>`, region)}
+            ${wordTags}
           </div>
           <div class="ds-flip__fill"></div>
           <div class="ds-flip__foot">${escapeHtml(foot)}</div>
@@ -194,10 +208,11 @@ export function answerFieldHtml({ placeholder = 'Ta réponse' } = {}) {
 export function morphCardHtml({
   instruction, question, badge = '', hint = '', retry = false, retryLabel = 'Deuxième tentative',
   answer = '', pos = '', translation = '', example = '', registre, sens, usage, sensHint = '',
-  questionRegion = '', answerRegion = '', promptRegion = '', questionSentence = false, forms = '',
+  questionRegion = '', answerRegion = '', promptRegion = '', questionSentence = false, forms = '', chips = null, auxChips = [], auxQuiet = true,
+  formsQuestion = false,
 }) {
   return `
-    <div class="ds-morph${retry ? ' ds-morph--retry' : ''}" id="morph-card">
+    <div class="ds-morph${retry ? ' ds-morph--retry' : ''}${formsQuestion ? ' ds-morph--formsq' : ''}" id="morph-card">
       <div class="ds-morph__band"></div>
       <div class="ds-morph__head">
         <div class="ds-morph__flood"></div>
@@ -234,7 +249,9 @@ export function morphCardHtml({
             <div class="ds-morph__answerrows">
               <div class="ds-morph__answerclip">${withRegion(`<div class="ds-result__answer" style="padding-top:6px">${escapeHtml(answer)}</div>`, answerRegion)}</div>
             </div>
-            ${forms ? `<div class="ds-morph__forms">${escapeHtml(forms)}</div>` : ''}
+            ${formsHtml(forms)}
+            ${chips ? chipRowHtml(chips) : ''}
+            ${auxChips.length ? auxChipsHtml(auxChips, `ds-morph__chips--static${auxQuiet ? ' ds-auxchips--quiet' : ''}`) : ''}
           </div>
         </div>
       </div>
@@ -257,6 +274,33 @@ export function morphCardHtml({
       </div>
     </div>
   `;
+}
+
+// Sous le mot de la correction : une chaîne (formes anglaises) ou, pour l'allemand, les lignes
+// de la carte découverte (3e personne, formes du verbe fort, pluriel), même hiérarchie (choix
+// d'Anto du 30/10/2026).
+function formsHtml(forms) {
+  if (!forms || !forms.length) return '';
+  if (typeof forms === 'string') return `<div class="ds-morph__forms">${escapeHtml(forms)}</div>`;
+  return forms.map((line) => `<div class="ds-morph__forms ds-morph__forms--${line.kind}">${escapeHtml(line.text)}</div>`).join('');
+}
+
+// Pastilles à choisir sous le champ de traduction allemande : article (der / die / das) ou
+// auxiliaire du parfait (haben / sein). Choisies avant Valider, colorées au corrigé (morphCard).
+function chipRowHtml({ options, multi, prefix }) {
+  return `<div class="ds-morph__chips${prefix ? ' ds-morph__chips--prefix' : ''}" id="m-chips" role="${multi ? 'group' : 'radiogroup'}">
+              ${options.map((option) => `<button type="button" class="ds-morph__chip" data-v="${escapeHtml(option)}"
+                aria-pressed="false">${escapeHtml(option)}</button>`).join('')}
+            </div>`;
+}
+
+// Auxiliaire d'un verbe allemand affiché (pas à choisir) : la même grande pastille que celle de la
+// question, partout dans l'exercice (choix d'Anto du 27/10/2026) — carte découverte, corrections,
+// fiche complète. « haben / sein » donne deux pastilles.
+export function auxChipsHtml(aux, extraClass = '') {
+  return `<div class="ds-morph__chips ds-auxchips${extraClass ? ` ${extraClass}` : ''}">
+              ${aux.map((a) => `<span class="ds-morph__chip ds-morph__chip--right">${escapeHtml(a)}</span>`).join('')}
+            </div>`;
 }
 
 // Règle d'usage sous le corrigé d'une carte d'usage ratée — seulement sur la dernière question

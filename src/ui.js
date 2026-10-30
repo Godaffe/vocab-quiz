@@ -1,7 +1,7 @@
 import { parseWorkbookFile, importFromWorkbook, findMissingItems } from './importer.js';
 import {
   startSession, checkBase, checkConjugation, finalizeVocabItem, checkAnswer, finalizeItem,
-  checkReverse, gradeHardAttempt, articleTest, ARTICLES,
+  checkReverse, gradeHardAttempt, chipTest, checkChips, ARTICLES,
 } from './quiz.js';
 import { getSetting, setSetting, resetDatabase } from './db.js';
 import { exportToFile, importFromFile, daysSince } from './backup.js';
@@ -28,13 +28,32 @@ import { todayISO } from './dates.js';
 const isWord = (item) => item.item_type === 'vocabulaire' || item.item_type === 'allemand';
 const translateInstruction = () => (currentLang() === 'de' ? 'Traduis en allemand' : 'Traduis en anglais');
 const formsInstruction = (item) => (item.item_type === 'allemand' ? 'Präteritum / Partizip II' : 'Passé simple / participe passé');
-// Nom allemand : l'article a sa carte, posée juste après la traduction.
-const hasArticleTest = (item) => item.item_type === 'allemand' && ARTICLES.includes(item.genre);
+// Nom ou verbe allemand : article ou auxiliaire se choisissent en pastilles sur la carte de
+// traduction (plus de carte d'article séparée depuis le 27/10/2026).
+const hasChipTest = (item) => chipTest(item) !== null;
+// Pastille de nature, partout où elle s'affiche (choix d'Anto du 27/10/2026) : un verbe allemand
+// montre son auxiliaire (haben, sein, haben / sein) à la place de « Verbe », un nom allemand à
+// article n'en montre aucune (l'article dit déjà que c'est un nom). Sur une carte de question,
+// la pastille ne paraît qu'avec la correction : l'auxiliaire n'y donne donc jamais la réponse.
+function displayPos(item) {
+  if (item.item_type !== 'allemand') return item.type;
+  // L'auxiliaire a sa grande pastille à part (auxOf) : plus de petite étiquette en doublon.
+  if (item.auxiliaire) return null;
+  return ARTICLES.includes(item.genre) ? null : item.type;
+}
+// Auxiliaire(s) d'un verbe allemand, pour les grandes pastilles affichées ([] sinon).
+const auxOf = (item) => (item.item_type === 'allemand' && item.auxiliaire ? item.auxiliaire.split(' / ') : []);
 const withArticle = (item) => (item.genre ? `${item.genre} ${item.en_base}` : item.en_base);
 // Sous le mot : formes d'un verbe fort/irrégulier, ou pluriel irrégulier d'un nom allemand.
 function wordExtras(item) {
   if (item.en_past_simple) return `(${item.en_past_simple} / ${item.en_past_participle})`;
   return item.pluriel ? `(Pl. ${item.pluriel})` : '';
+}
+
+// Sous le mot d'une correction ou de la fiche complète : en allemand, les mêmes lignes que la
+// carte découverte (3e personne, formes, pluriel) ; ailleurs, les formes entre parenthèses.
+function answerForms(item) {
+  return item.item_type === 'allemand' ? germanWordLines(item).slice(1) : wordExtras(item);
 }
 
 const WEEKDAYS = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
@@ -614,11 +633,11 @@ function recordOutcome(tally, before, after, firstCorrect) {
 // retourner (480 ms, la seule animation longue du système), glissement vers le haut pour
 // passer au suivant. Le bouton du bas reste le chemin fiable quand le geste n'est pas
 // disponible (souris, clavier).
-function discoverCard(area, { word, pos, example, translation, registre, sens, usage, region, remaining }) {
+function discoverCard(area, { word, wordLines, aux, pos, example, translation, registre, sens, usage, region, remaining }) {
   return new Promise((resolve) => {
     area.innerHTML = `
       <div class="session-body">
-        ${cardStackHtml(remaining, flipCardHtml({ word, pos, example, translation, registre, sens, usage, region, foot: 'Toucher ou glisser pour retourner' }))}
+        ${cardStackHtml(remaining, flipCardHtml({ word, wordLines, aux, pos, example, translation, registre, sens, usage, region, foot: 'Toucher ou glisser pour retourner' }))}
       </div>
       <div class="session-foot">
         <button type="button" class="ds-btn ds-btn--hero ds-btn--secondary" id="next-btn">Mot suivant</button>
@@ -694,14 +713,15 @@ function discoverCard(area, { word, pos, example, translation, registre, sens, u
 function morphCard(area, {
   instruction, question, hint, badge, retry = false, retryLabel, remaining = 0, checkFn,
   answer: expected, pos, translation, example, registre, sens, usage, sensHint, getConsequence,
-  questionRegion, answerRegion, promptRegion, questionSentence = false,
+  questionRegion, answerRegion, promptRegion, questionSentence = false, chips = null, forms = '', auxChips = [],
+  formsQuestion = false,
 }) {
   return new Promise((resolve) => {
     const card = morphCardHtml({
       instruction, question, badge, retry, retryLabel, hint: hint || '',
       answer: expected, pos, translation, example, registre, sens, usage, sensHint: sensHint || '',
       questionRegion: questionRegion || '', answerRegion: answerRegion || '', promptRegion: promptRegion || '',
-      questionSentence,
+      questionSentence, chips, forms, auxChips, formsQuestion,
     });
     area.innerHTML = `
       <div class="session-body">
@@ -730,6 +750,27 @@ function morphCard(area, {
     let answered = false;
     let lastAnswer = '';
     let lastCorrect = false;
+    let lastChipsCorrect = true;
+
+    // Pastilles (article ou auxiliaire allemand) : Valider attend qu'au moins une soit choisie.
+    // Un nom n'a qu'un article (choix unique) ; un verbe se coche pastille par pastille.
+    const chipEls = chips ? [...area.querySelectorAll('.ds-morph__chip')] : [];
+    const selectedChips = () => chipEls.filter((el) => el.classList.contains('ds-morph__chip--on')).map((el) => el.dataset.v);
+    const syncSubmit = () => { if (chips) submitBtn.disabled = !answered && selectedChips().length === 0; };
+    for (const el of chipEls) {
+      // Toucher une pastille ne doit pas retirer le focus du champ : le clavier resterait fermé.
+      el.addEventListener('pointerdown', (e) => e.preventDefault());
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (settled) return;
+        const on = !el.classList.contains('ds-morph__chip--on');
+        if (!chips.multi) chipEls.forEach((other) => { other.classList.remove('ds-morph__chip--on'); other.setAttribute('aria-pressed', 'false'); });
+        el.classList.toggle('ds-morph__chip--on', chips.multi ? on : true);
+        el.setAttribute('aria-pressed', String(el.classList.contains('ds-morph__chip--on')));
+        syncSubmit();
+      });
+    }
+    syncSubmit();
 
     const skip = () => {
       if (settled) return;
@@ -739,20 +780,42 @@ function morphCard(area, {
 
     const submit = async () => {
       if (settled) return;
+      if (chips && selectedChips().length === 0) return;
       settled = true;
       const raw = input.value;
       const isCorrect = checkFn(raw);
+      const picked = selectedChips();
+      // Article d'un nom : la correction l'écrit devant le nom (saisie et réponse attendue) et les
+      // pastilles s'effacent. Mot juste mais article faux : rien n'est barré, le nom s'écrit avec
+      // le bon article, seul l'article en rouge gras (choix d'Anto du 27/10/2026).
+      const prefixed = chips?.prefix;
+      const bareTyped = raw.trim().replace(/^(der|die|das)\s+/i, '');
+      const chipsCorrect = chips ? checkChips(chips, picked) : true;
+      // Verdict de la carte : le mot et la pastille. Seul le mot se redemande (Réessayer) ; la
+      // pastille n'a qu'un essai, son corrigé se lit sur les pastilles colorées.
+      const verdict = isCorrect && chipsCorrect;
       lastAnswer = raw;
       lastCorrect = isCorrect;
-      const verdictIcon = icon(isCorrect ? 'check' : 'x', { size: 13, color: '#fff', stroke: 3.4 });
-      const verdictIconSm = icon(isCorrect ? 'check' : 'x', { size: 18, color: '#fff', stroke: 3.4 });
-      const consequence = getConsequence ? await getConsequence(raw, isCorrect) : null;
+      lastChipsCorrect = chipsCorrect;
+      for (const el of chipEls) {
+        el.disabled = true;
+        if (chips.correct.includes(el.dataset.v)) el.classList.add('ds-morph__chip--right');
+        else if (picked.includes(el.dataset.v)) el.classList.add('ds-morph__chip--wrong');
+      }
+      const verdictIcon = icon(verdict ? 'check' : 'x', { size: 13, color: '#fff', stroke: 3.4 });
+      const verdictIconSm = icon((prefixed ? verdict : isCorrect) ? 'check' : 'x', { size: 18, color: '#fff', stroke: 3.4 });
+      const consequence = getConsequence ? await getConsequence(raw, isCorrect, chipsCorrect) : null;
 
-      typed.textContent = raw;
+      if (!prefixed) typed.textContent = raw;
+      else if (isCorrect && !chipsCorrect) typed.innerHTML = `<span class="ds-morph__article--fixed">${escapeHtml(chips.correct[0])}</span> ${escapeHtml(bareTyped)}`;
+      else typed.textContent = isCorrect ? `${picked[0]} ${bareTyped}` : raw;
+      if (prefixed) area.querySelector('.ds-result__answer').textContent = `${chips.correct[0]} ${expected}`;
       disc.innerHTML = verdictIcon;
       fdisc.innerHTML = verdictIconSm;
       input.disabled = true;
-      label.textContent = isCorrect ? 'Correct' : 'Réponse attendue';
+      const choiceOnly = isCorrect && !chipsCorrect;
+      const choiceLabel = prefixed ? 'Mauvais article' : 'Mauvais auxiliaire';
+      label.textContent = verdict ? 'Correct' : (choiceOnly ? choiceLabel : 'Réponse attendue');
       // Le bouton reste cuivre même sur un échec (comme la maquette) : « Réessayer » n'est pas
       // un second refus, c'est la reprise volontaire de la même question.
       submitLabelA.textContent = isCorrect ? 'Suivant' : 'Réessayer';
@@ -761,10 +824,26 @@ function morphCard(area, {
       // bloc « carte à fusion » dans style.css) : teinte immédiate, forme (90-260ms), contenu
       // (240-430ms) — rien n'attend ici entre les étapes, le CSS choréographie tout le décalage.
       root.classList.add(
-        'ds-morph--committed', isCorrect ? 'ds-morph--correct' : 'ds-morph--wrong',
+        'ds-morph--committed', verdict ? 'ds-morph--correct' : 'ds-morph--wrong',
         'ds-morph--tinted', 'ds-morph--morphed', 'ds-morph--unfolded',
       );
-      if (!isCorrect) root.classList.add('ds-morph--struck');
+      if (!isCorrect) {
+        root.classList.add('ds-morph--struck');
+        // Réponse fausse (choix d'Anto du 30/10/2026) : tout en haut de la carte, dans un bloc
+        // rouge plus sombre, la croix puis la saisie en dessous, lisible (pas barrée, sans « Ta
+        // réponse ») ; la réponse attendue et le reste de la carte suivent, hors du bloc.
+        const miss = document.createElement('div');
+        miss.className = 'ds-morph__miss';
+        miss.innerHTML = `<span class="ds-morph__missdisc">${icon('x', { size: 13, color: '#fff', stroke: 3.4 })}</span>
+          ${raw.trim() ? `<span class="ds-morph__misstext">${escapeHtml(typed.textContent.trim())}</span>` : ''}`;
+        root.querySelector('.ds-morph__head').prepend(miss);
+      }
+      // Mot juste, pastille fausse : la saisie n'est pas barrée et la ligne « réponse
+      // attendue » (qui répéterait le mot) reste repliée.
+      else if (!chipsCorrect) root.classList.add('ds-morph--chipwrong');
+      // Auxiliaire juste : sa pastille reste discrète, seule une erreur la met en blanc (choix
+      // d'Anto du 30/10/2026).
+      if (chips && !prefixed && chipsCorrect) root.classList.add('ds-morph--auxok');
       answered = true;
       foot.classList.add('session-foot--answered');
 
@@ -779,7 +858,7 @@ function morphCard(area, {
       }
     };
 
-    const finish = () => resolve({ answer: lastAnswer, isCorrect: lastCorrect });
+    const finish = () => resolve({ answer: lastAnswer, isCorrect: lastCorrect, chipsCorrect: lastChipsCorrect });
     // Une fois répondu, le même bouton (relibellé Suivant/Réessayer) fait continuer ; un clic
     // n'importe où sur la carte le fait tout autant, plus besoin de viser le bouton.
     submitBtn.addEventListener('click', () => (answered ? finish() : submit()));
@@ -806,12 +885,11 @@ function morphCard(area, {
 // { isCorrect } une fois la correction vue (ou { skipped: true }), et `getConsequence(isCorrect)`
 // (attendue, peut être async) fournit la conséquence affichée sous la carte. Pas de deuxième
 // tentative : avec les bonnes phrases déjà colorées, recocher ne serait qu'une formalité.
-function choiceCard(area, { word, test, rule, badge, retry = false, remaining = 0, getConsequence, prompt, help, shuffle = true }) {
+function choiceCard(area, { word, test, rule, badge, retry = false, remaining = 0, getConsequence, prompt, help }) {
   return new Promise((resolve) => {
     // Ordre mélangé à chaque affichage : la bonne phrase ne tombe pas toujours au même rang.
-    // Les articles gardent leur ordre habituel der / die / das.
     const order = test.options.map((_, i) => i);
-    if (shuffle) order.sort(() => Math.random() - 0.5);
+    order.sort(() => Math.random() - 0.5);
     const shown = order.map((i) => test.options[i]);
     const card = choiceCardHtml({ word, options: shown, badge, retry, rule, prompt, help });
     area.innerHTML = `
@@ -1080,13 +1158,15 @@ function gapCard(area, { test, rule = '', badge, label, retry = false, remaining
 // Carte réponse complète d'un mot à questions d'usage, après la dernière d'entre elles : la
 // carte réponse habituelle (mot, traduction, sens, usage, exemple) déjà dépliée, teintée selon
 // le verdict du mot entier. Rien à saisir : « Suivant » passe au mot suivant.
-function wordCard(area, item, isCorrect, { remaining = 0 } = {}) {
+function wordCard(area, item, isCorrect, { remaining = 0, auxWrong = false } = {}) {
   return new Promise((resolve) => {
     const card = morphCardHtml({
-      instruction: '', question: withArticle(item), answer: withArticle(item), pos: item.type,
+      instruction: '', question: withArticle(item), answer: withArticle(item), pos: displayPos(item),
       // Le bandeau ne porte que le français ; les formes irrégulières se lisent sous le mot.
       translation: item.prompt, registre: item.registre, sens: item.sens,
-      forms: wordExtras(item),
+      // L'auxiliaire n'est mis en avant (pastille blanche) que s'il a été raté (choix d'Anto du
+      // 30/10/2026) ; sinon discret, comme partout.
+      forms: answerForms(item), auxChips: auxOf(item), auxQuiet: !auxWrong,
       usage: item.usage, example: item.example, answerRegion: item.region,
     });
     area.innerHTML = `
@@ -1161,24 +1241,25 @@ async function askUsageTest(container, item, { test }, { index, total, badge, fo
   return result.isCorrect;
 }
 
-// Carte d'article d'un nom allemand : der / die / das, une seule tentative (comme une carte
-// de phrases à cocher).
-async function askArticle(container, item, { badge, remaining = 0, retry = false, getConsequence }) {
-  const result = await choiceCard(container, {
-    word: item.en_base, test: articleTest(item), badge, retry, remaining,
-    prompt: 'Quel article ?', help: "Choisis l'article", getConsequence, shuffle: false,
-  });
-  if (result.skipped) throw new ItemSkipped();
-  return result.isCorrect;
-}
-
 // --- Passage de découverte -------------------------------------------------
+
+// Face allemande de la carte découverte, ligne par ligne : le mot (avec son article), puis la 3e
+// personne irrégulière, les formes du verbe fort, le pluriel. Null hors allemand (une ligne).
+function germanWordLines(item) {
+  if (item.item_type !== 'allemand') return null;
+  return [
+    { kind: 'main', text: withArticle(item) },
+    item.troisieme_personne && { kind: 'third', text: item.troisieme_personne },
+    item.en_past_simple && { kind: 'forms', text: `${item.en_past_simple} / ${item.en_past_participle}` },
+    item.pluriel && { kind: 'plural', text: `Pl. ${item.pluriel}` },
+  ].filter(Boolean);
+}
 
 function discoverFields(item) {
   if (isWord(item)) {
     const word = [withArticle(item), wordExtras(item)].filter(Boolean).join(' ');
     return {
-      word, pos: item.type, example: item.example, translation: item.prompt,
+      word, wordLines: germanWordLines(item), aux: auxOf(item), pos: displayPos(item), example: item.example, translation: item.prompt,
       registre: item.registre, sens: item.sens, usage: item.usage, region: item.region,
     };
   }
@@ -1213,10 +1294,14 @@ function failureConsequence(item, answer, { preserveSchedule = false } = {}) {
 // entraînement affiché à l'écran, sous la forme d'une carte « deuxième tentative ».
 async function askUntilCorrect(container, item, {
   instruction, question, expected, pos, example, registre, sens, usage, sensHint, index, total, badge, forceRetry, options, checkFn,
-  questionRegion, answerRegion, promptRegion, questionSentence = false, translation,
+  questionRegion, answerRegion, promptRegion, questionSentence = false, translation, chips = null, forms = '',
+  formsQuestion = false, report = {},
 }) {
   let first = null;
   let attempt = 0;
+  // Pastille ratée au premier essai : la reprise la redemande avec le mot (choix d'Anto du
+  // 30/10/2026) ; sinon la reprise ne redemande que le mot.
+  let chipsAgain = false;
   while (true) {
     const retry = forceRetry || attempt > 0;
     // L'indice n'apparaît qu'à la reprise : la première tentative se joue sans filet.
@@ -1249,13 +1334,24 @@ async function askUntilCorrect(container, item, {
       answerRegion,
       promptRegion,
       questionSentence,
+      chips: attempt === 0 || chipsAgain ? chips : null,
+      forms,
+      formsQuestion,
+      // Sans pastilles à choisir (formes, reprise), l'auxiliaire s'affiche à la correction.
+      auxChips: (attempt === 0 || chipsAgain) && chips ? [] : auxOf(item),
       // La faute est déjà barrée dans la carte (« Ta réponse ») : sous la carte, seul le
       // changement de niveau reste à montrer.
-      getConsequence: (answer, isCorrect) => (!isCorrect && currentAttempt === 0 ? failureConsequence(item, '', options) : null),
+      getConsequence: (answer, isCorrect, chipsCorrect) => (
+        !(isCorrect && chipsCorrect) && currentAttempt === 0 ? failureConsequence(item, '', options) : null),
     });
     if (result.skipped) throw new ItemSkipped();
     const { isCorrect } = result;
-    if (first === null) first = isCorrect;
+    // Le mot n'est juste au premier essai que si sa pastille l'est aussi.
+    if (first === null) {
+      first = isCorrect && result.chipsCorrect;
+      report.chipsCorrect = result.chipsCorrect;
+      chipsAgain = Boolean(chips) && !result.chipsCorrect;
+    }
     if (isCorrect) break;
     attempt += 1;
   }
@@ -1265,17 +1361,22 @@ async function askUntilCorrect(container, item, {
 async function runVocabQuestion(container, item, { index, total, badge, options, forceRetry, tally, markResult }) {
   const before = getProgressRow(item.item_type, item.item_key);
   const usageSteps = usageStepsFor(item);
-  const article = hasArticleTest(item);
-  // Des questions d'usage ou d'article suivent : traduction et formes ne montrent ni la règle
-  // ni l'exemple (ils donneraient leurs réponses) ; la fiche complète se déplie sous la dernière.
-  const followUps = usageSteps.length > 0 || article;
+  const chips = chipTest(item);
+  // Des questions d'usage suivent, ou un mot à pastilles (article, auxiliaire) a encore ses
+  // formes à donner : traduction et formes ne montrent ni la règle ni l'exemple (ils donneraient
+  // les réponses) ; la fiche complète se déplie à la fin. Un mot à pastilles sans rien après la
+  // traduction n'a pas de fiche à part : sa correction la remplace (choix d'Anto du 27/10/2026),
+  // pluriel compris.
+  const followUps = usageSteps.length > 0 || (chips !== null && Boolean(item.en_past_simple));
+  const translationIsFinal = chips !== null && !followUps;
   const example = followUps ? null : item.example;
+  const chipReport = {};
 
   const baseCorrect = await askUntilCorrect(container, item, {
     instruction: translateInstruction(),
     question: item.prompt,
     expected: item.en_base,
-    pos: item.type,
+    pos: displayPos(item),
     example,
     registre: item.registre,
     sens: item.sens,
@@ -1283,26 +1384,22 @@ async function runVocabQuestion(container, item, { index, total, badge, options,
     sensHint: item.sens,
     answerRegion: item.region,
     promptRegion: item.region,
-    index, total, badge, forceRetry, options,
+    index, total, badge, forceRetry, options, chips, report: chipReport,
+    forms: translationIsFinal ? answerForms(item) : '',
     checkFn: (answer) => checkBase(item, answer),
   });
 
   let conjugationCorrect = true;
-  if (article) {
-    conjugationCorrect = await askArticle(container, item, {
-      badge, retry: forceRetry, remaining: Math.max(0, total - index - 1),
-      getConsequence: (isCorrect) => (isCorrect ? null : failureConsequence(item, '', options)),
-    });
-  }
   if (item.en_past_simple) {
     const formsCorrect = await askUntilCorrect(container, item, {
       instruction: formsInstruction(item),
       question: item.en_base,
       translation: item.prompt,
       expected: `${item.en_past_simple} / ${item.en_past_participle}`,
-      pos: item.type,
+      pos: displayPos(item),
       example,
       questionRegion: item.region,
+      formsQuestion: true,
       index, total, badge, forceRetry, options,
       checkFn: (answer) => checkConjugation(item, answer),
     });
@@ -1322,7 +1419,11 @@ async function runVocabQuestion(container, item, { index, total, badge, options,
   await finalizeVocabItem(item, baseCorrect, conjugationCorrect && usageCorrect, options);
   const correct = baseCorrect && conjugationCorrect && usageCorrect;
   // Après la dernière question d'usage, la carte réponse complète du mot (masquée jusque-là).
-  if (followUps) await wordCard(container, item, correct, { remaining: Math.max(0, total - index - 1) });
+  if (followUps) {
+    await wordCard(container, item, correct, {
+      remaining: Math.max(0, total - index - 1), auxWrong: Boolean(chips) && !chips.prefix && chipReport.chipsCorrect === false,
+    });
+  }
   recordOutcome(tally, before, getProgressRow(item.item_type, item.item_key), correct);
   markResult?.(index, correct);
 }
@@ -1437,7 +1538,7 @@ async function runHardModeRound(container, item, targetPhase, tally) {
   const {
     instruction, question, expected, hint, sensHint, checkFn, questionRegion, answerRegion, promptRegion,
   } = hardModeQuestion(item, targetPhase);
-  const pos = isWord(item) ? item.type : null;
+  const pos = isWord(item) ? displayPos(item) : null;
   // Rempli par getConsequence (elle seule connaît le verdict et le résultat de la notation
   // Leitner) puis lu une fois morphCard résolue : c'est la décision renvoyée par cette
   // fonction (`rescue` = phase de la question de rattrapage à poser avant de sortir le mot).
@@ -1446,10 +1547,16 @@ async function runHardModeRound(container, item, targetPhase, tally) {
   // (formes passées d'un verbe irrégulier, puis un test d'usage par manière) doivent toutes
   // l'être aussi — comme dans le circuit normal.
   const followUps = targetPhase === 3 && isWord(item)
-    ? [...(hasArticleTest(item) ? [{ article: true }] : []), ...(item.en_past_simple ? [{ forms: true }] : []), ...usageStepsFor(item)]
+    ? [...(item.en_past_simple ? [{ forms: true }] : []), ...usageStepsFor(item)]
     : [];
+  // Phase 3 d'un mot allemand : article ou auxiliaire en pastilles sur la carte de traduction,
+  // comme dans le circuit normal.
+  const chips = targetPhase === 3 ? chipTest(item) : null;
   // L'article se lit aussi dans l'exemple : même masquage que pour l'usage.
-  const hasUsage = followUps.some((step) => step.test || step.article);
+  // Avec des pastilles, la fiche complète vient à la fin s'il reste des cartes après la
+  // traduction ; sinon la correction de la traduction en tient lieu (comme dans le circuit normal).
+  const hasUsage = followUps.some((step) => step.test) || (chips !== null && followUps.length > 0);
+  const translationIsFinal = chips !== null && followUps.length === 0;
 
   // Note une tentative de phase complète (base, plus formes passées le cas échéant) : une
   // seule entrée au bilan et une seule notation Leitner par tentative.
@@ -1504,11 +1611,14 @@ async function runHardModeRound(container, item, targetPhase, tally) {
     translation: targetPhase === 1 ? '' : question,
     example: hasUsage ? null : (item.example || item.explication),
     checkFn,
-    getConsequence: async (answer, isCorrect) => {
+    chips,
+    auxChips: chips ? [] : auxOf(item),
+    forms: translationIsFinal ? answerForms(item) : '',
+    getConsequence: async (answer, isCorrect, chipsCorrect) => {
       // Des cartes de suite restent : la note attend la dernière d'entre elles, juste ou
       // fausse (comme finalizeVocabItem dans le circuit normal).
       if (followUps.length) return null;
-      return gradeRound(answer, isCorrect);
+      return gradeRound(answer, isCorrect && chipsCorrect);
     },
   });
   if (result.skipped) throw new ItemSkipped();
@@ -1518,7 +1628,7 @@ async function runHardModeRound(container, item, targetPhase, tally) {
   // notation par tentative de phase, portée par la dernière carte : la phase n'est réussie
   // que si tout est juste. La réponse barrée n'est montrée que si cette dernière carte est
   // elle-même fausse.
-  let allCorrect = result.isCorrect;
+  let allCorrect = result.isCorrect && result.chipsCorrect;
   for (let i = 0; i < followUps.length; i += 1) {
     const last = i === followUps.length - 1;
     const consequence = (answer, ok) => {
@@ -1529,7 +1639,7 @@ async function runHardModeRound(container, item, targetPhase, tally) {
     const ok = await runHardFollowUp(container, item, followUps[i], pos, consequence, rule);
     allCorrect = allCorrect && ok;
   }
-  if (hasUsage) await wordCard(container, item, allCorrect);
+  if (hasUsage) await wordCard(container, item, allCorrect, { auxWrong: Boolean(chips) && !chips.prefix && !result.chipsCorrect });
   if (outcome.rescue) await askHardRescue(container, item, outcome.rescue);
   return outcome;
 }
@@ -1554,7 +1664,8 @@ async function askHardRescue(container, item, phase) {
       answerRegion,
       promptRegion,
       answer: expected,
-      pos: isWord(item) ? item.type : null,
+      pos: isWord(item) ? displayPos(item) : null,
+      auxChips: auxOf(item),
       registre: item.registre,
       sens: item.sens,
       usage: item.usage,
@@ -1569,7 +1680,6 @@ async function askHardRescue(container, item, phase) {
 // Une carte de suite en phase 3 du mode compliqué (formes passées ou test d'usage), jouée une
 // fois : `consequence(answer, isCorrect)` décide de la notation et de ce qui s'affiche.
 async function runHardFollowUp(container, item, step, pos, consequence, rule = '') {
-  if (step.article) return askArticle(container, item, { getConsequence: (ok) => consequence('', ok) });
   let result;
   if (step.forms) {
     const formsExpected = `${item.en_past_simple} / ${item.en_past_participle}`;
@@ -1579,8 +1689,10 @@ async function runHardFollowUp(container, item, step, pos, consequence, rule = '
       questionRegion: item.region,
       answer: formsExpected,
       pos,
+      auxChips: auxOf(item),
+      formsQuestion: true,
       translation: item.prompt,
-      example: usageStepsFor(item).length || hasArticleTest(item) ? null : item.example,
+      example: usageStepsFor(item).length || hasChipTest(item) ? null : item.example,
       checkFn: (answer) => checkConjugation(item, answer),
       getConsequence: consequence,
     });
