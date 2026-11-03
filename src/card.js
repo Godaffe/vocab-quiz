@@ -65,9 +65,10 @@ export function cardStackHtml(remaining, innerHtml, { stretch = false } = {}) {
 
 // --- carte découverte --------------------------------------------------------
 // Recto : le mot à apprendre, son type et son registre. Verso : la traduction, le même type et
-// registre, l'exemple (côté français, choix d'Anto du 26/10), puis sens et usage. Le mot est
-// ancré au même niveau sur les deux faces (espaceur fixe en tête) ; sens/usage sont épinglés en
-// bas via un espaceur élastique — jamais centrés au milieu, qui ferait flotter le mot à une
+// registre, puis sens, usage et l'exemple en dernier : il applique tout ce qui est au-dessus
+// (côté français, choix d'Anto du 26/10 ; exemple en dernier, choix du 02/11). Le mot est
+// ancré au même niveau sur les deux faces (espaceur fixe en tête) ; sens/usage/exemple sont
+// épinglés en bas via un espaceur élastique — jamais centrés au milieu, qui ferait flotter le mot à une
 // hauteur différente selon ce que la carte a d'autre à montrer. Les deux faces partagent la
 // même case de grille (voir .ds-flip__inner) : la carte prend la hauteur de la plus haute, rien
 // ne déborde ni ne se superpose.
@@ -107,16 +108,16 @@ export function flipCardHtml({ word, wordLines, aux = [], pos, example, translat
             <div class="${wordSizeClass(translation)}">${escapeHtml(translation)}</div>
             ${tags}
           </div>
-          ${example ? `
-          <div class="ds-example--tab">
-            <span class="ds-example__tab">Exemple</span>
-            <div class="ds-example__text">${exampleHtml(example)}</div>
-          </div>` : ''}
           <div class="ds-flip__fill"></div>
           ${(sens || usage) ? `
           <div class="ds-flip__fields">
             ${sens ? fieldCardHtml('Sens', sens, 'sens') : ''}
             ${usage ? fieldCardHtml('Usage', usage, 'usage') : ''}
+          </div>` : ''}
+          ${example ? `
+          <div class="ds-example--tab">
+            <span class="ds-example__tab">Exemple</span>
+            <div class="ds-example__text">${exampleHtml(example)}</div>
           </div>` : ''}
           <div class="ds-flip__foot">${escapeHtml(foot)}</div>
         </div>
